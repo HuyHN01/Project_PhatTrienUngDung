@@ -1,0 +1,74 @@
+# File .gitignore cho dự án Android Studio (đa nền tảng)
+
+### Android Studio ###
+# Thư mục cấu hình và cache
+.idea/
+.gradle/
+build/
+.navigation/
+captures/
+*.iml
+*.iws
+*.ipr
+local.properties
+*.keystore
+*.jks
+
+# File log và báo cáo
+/logs
+/reports
+/android-profiler
+/profiler
+*.log
+
+# File hệ thống build
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Thư mục và file Gradle
+!gradle/wrapper/gradle-wrapper.jar
+!gradle-wrapper.properties
+gradle-app.setting
+.gradle/
+gradlew
+gradlew.bat
+
+# File dữ liệu cục bộ
+.DS_Store
+Thumbs.db
+
+### Flutter (nếu có) ###
+# Flutter/Dart/Pub
+**/doc/api/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.png
+*.dart.js
+*.info.json
+
+# Android/Xcode/VS Code
+android/app/release/
+android/app/debug/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+.vscode/
+
+### Firebase (nếu có) ###
+google-services.json
+GoogleService-Info.plist
+
+### Các file tạm ###
+*.swp
+*.swo
+*.bak
+*.tmp
+*~
