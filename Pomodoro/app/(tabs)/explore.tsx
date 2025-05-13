@@ -1,110 +1,53 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import { Ionicons, MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-
-export default function TabTwoScreen() {
+const Sidebar = () => {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
-  );
-}
+    <ScrollView className="bg-black flex-1 px-4 py-6">
+      <View className="items-center mb-6">
+        <View className="w-16 h-16 rounded-full bg-gray-700 mb-2" />
+        <Text className="text-red-500 text-base font-semibold">Đăng Nhập | Đăng ký</Text>
+      </View>
 
-const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
-  },
-  titleContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-});
+      <View className="bg-gray-800 rounded-lg px-3 py-2 mb-4">
+        <TextInput
+          placeholder="Tìm kiếm"
+          placeholderTextColor="#aaa"
+          className="text-white"
+        />
+      </View>
+
+      {[
+        { icon: 'sunny' as const, label: 'Hôm nay', color: 'text-green-500' },
+        { icon: 'cloudy-night' as const, label: 'Ngày mai', color: 'text-orange-500' },
+        { icon: 'calendar' as const, label: 'Tuần này', color: 'text-purple-500' },
+        { icon: 'calendar-outline' as const, label: 'Đã lên kế hoạch', color: 'text-blue-500' },
+        { icon: 'calendar-sharp' as const, label: 'Sự kiện', color: 'text-emerald-500' },
+        { icon: 'checkmark-done-circle' as const, label: 'Đã hoàn thành', color: 'text-gray-300' },
+        { icon: 'checkbox-outline' as const, label: 'Nhiệm vụ', color: 'text-sky-500' },
+      ].map(({ icon, label, color }, index) => (
+        <TouchableOpacity key={index} className="flex-row items-center justify-between py-3">
+          <View className="flex-row items-center space-x-4">
+            <Ionicons name={icon} size={20} className={`${color}`} />
+            <Text className="text-white text-base">{label}</Text>
+          </View>
+          <Text className="text-gray-400 text-sm">3h 5</Text>
+        </TouchableOpacity>
+      ))}
+
+      <TouchableOpacity className="flex-row items-center py-4">
+        <Entypo name="circle-with-plus" size={20} color="red" />
+        <Text className="text-red-500 ml-3 text-base">Thêm Dự Án</Text>
+      </TouchableOpacity>
+
+      <View className="items-center mt-10">
+        <View className="w-16 h-16 rounded-full bg-cover bg-center" style={{ backgroundImage: `url('https://cdn.pixabay.com/photo/2017/06/20/19/22/fantasy-2423046_960_720.jpg')` }}>
+          <Text className="text-white text-xl text-center mt-5">60</Text>
+        </View>
+      </View>
+    </ScrollView>
+  );
+};
+
+export default Sidebar;
