@@ -4,15 +4,16 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ImageBackground, Al
 import * as ReactNative from 'react-native'; // Sử dụng namespace import cho AppState
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-// KIỂM TRA LẠI DÒNG IMPORT NÀY: Có thể bạn muốn dùng 'expo-av'
-import { Audio } from 'expo-av'; // GIẢ SỬ SỬA THÀNH 'expo-av'
+import { Audio } from 'expo-av';
 import { db } from '../../firebaseConfig'; // Đảm bảo đường dẫn này đúng
 import { ref, update, increment } from 'firebase/database';
 import { styles } from './pomodoro.styles';
+import { useAuth } from '../../context/AuthContext';
 
-const POMODORO_DURATION_DEFAULT = 25 * 60; // 25 phút
-const SHORT_BREAK_DURATION_DEFAULT = 5 * 60; // 5 phút
-const LONG_BREAK_DURATION_DEFAULT = 15 * 60; // 15 phút
+// Thời lượng mặc định (tính bằng giây)
+const POMODORO_MODE_DURATION_DEFAULT_SECONDS = 25 * 60;
+const SHORT_BREAK_DURATION_SECONDS = 5 * 60; // Đã là _SECONDS
+const LONG_BREAK_DURATION_SECONDS = 15 * 60;
 
 type TimerMode = 'pomodoro' | 'shortBreak' | 'longBreak';
 
@@ -21,10 +22,17 @@ const backgroundImageUri = 'https://images.unsplash.com/photo-1472552944129-b035
 type AppStateStatus = ReactNative.AppStateStatus;
 
 export default function PomodoroScreen() {
-  const params = useLocalSearchParams<{ taskId?: string; taskTitle?: string }>();
+  const { user } = useAuth();
+  const params = useLocalSearchParams<{ taskId?: string; taskTitle?: string; taskPomodoroDuration?: string }>(); // <--- THÊM taskPomodoroDuration
   const router = useRouter();
 
-  const [timeLeft, setTimeLeft] = useState(POMODORO_DURATION_DEFAULT);
+  const initialTaskPomodoroDurationSecondsRef = useRef<number>(
+    params.taskPomodoroDuration
+      ? parseInt(params.taskPomodoroDuration, 10) * 60 // Chuyển phút sang giây
+      : POMODORO_MODE_DURATION_DEFAULT_SECONDS
+  );
+
+  const [timeLeft, setTimeLeft] = useState(initialTaskPomodoroDurationSecondsRef.current);
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState<TimerMode>('pomodoro');
   const [pomodoroCount, setPomodoroCount] = useState(0);
@@ -32,6 +40,7 @@ export default function PomodoroScreen() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [currentTaskTitle, setCurrentTaskTitle] = useState<string | null>('Tập trung');
 
+  // Đổi kiểu của intervalRef thành number | null
   const intervalRef = useRef<number | null>(null);
   const appState = useRef(ReactNative.AppState.currentState);
   const backgroundTimeRef = useRef<number | null>(null);
@@ -43,7 +52,7 @@ export default function PomodoroScreen() {
     const loadSound = async () => {
       try {
         const { sound } = await Audio.Sound.createAsync(
-           require('@/assets/sounds/timer_finish.mp3') // Đảm bảo file này tồn tại
+           require('@/assets/sounds/timer_finish.mp3')
         );
         if (isMounted) {
           soundRef.current = sound;
@@ -65,52 +74,54 @@ export default function PomodoroScreen() {
   const playSound = useCallback(async () => {
     try {
       await soundRef.current?.stopAsync();
-      await soundRef.current?.playAsync();
+      await soundRef.current?.replayAsync();
     } catch (error) {
       console.error("Không thể phát âm thanh: ", error);
     }
   }, []);
 
-  // --- Hàm reset timer ---
-  const resetTimer = useCallback((newModeParam?: TimerMode, duration?: number) => {
-  if (intervalRef.current) {
-    clearInterval(intervalRef.current);
-    intervalRef.current = null;
+  const getInitialTimeForMode = useCallback((currentMode: TimerMode) => {
+  if (currentMode === 'pomodoro') {
+    return initialTaskPomodoroDurationSecondsRef.current; // Lấy từ ref
   }
-  // Chỉ set isActive về false nếu nó đang true, để tránh xung đột không cần thiết
-  setIsActive(currentIsActive => {
-    if (currentIsActive) {
-      console.log('[resetTimer] Setting isActive to false.');
-      return false;
-    }
-    return false; // Hoặc return currentIsActive nếu bạn không muốn thay đổi nếu nó đã là false
-  });
+  if (currentMode === 'shortBreak') return SHORT_BREAK_DURATION_SECONDS; // Đảm bảo hằng số này cũng là giây
+  if (currentMode === 'longBreak') return LONG_BREAK_DURATION_SECONDS; // Đảm bảo hằng số này cũng là giây
+  return initialTaskPomodoroDurationSecondsRef.current;
+}, []);
 
-  const targetMode = newModeParam || 'pomodoro';
-  setMode(targetMode);
-
-  // ... (phần còn lại)
-}, []); // Thêm setIsActive, setMode, setTimeLeft vào dependencies nếu ESLint yêu cầu, dù chúng ổn định
-
-  // --- Xử lý params từ navigation ---
   useEffect(() => {
-  if (params.taskId) {
-    setCurrentTaskId(params.taskId);
-    setCurrentTaskTitle(params.taskTitle || 'Nhiệm vụ được chọn');
+    const newDurationSeconds = params.taskPomodoroDuration
+      ? parseInt(params.taskPomodoroDuration, 10) * 60
+      : POMODORO_MODE_DURATION_DEFAULT_SECONDS;
 
-    if (timeLeft === POMODORO_DURATION_DEFAULT && !isActive) {
-      resetTimer('pomodoro', POMODORO_DURATION_DEFAULT);
+    initialTaskPomodoroDurationSecondsRef.current = newDurationSeconds; // Cập nhật ref
+
+    setCurrentTaskId(params.taskId || null);
+    setCurrentTaskTitle(params.taskTitle || 'Tập trung');
+
+    // Chỉ reset timeLeft nếu đang ở chế độ pomodoro và timer không active hoặc đã thay đổi duration
+    if (mode === 'pomodoro' && (!isActive || timeLeft !== newDurationSeconds)) {
+      setTimeLeft(newDurationSeconds);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      setIsActive(false); // Đảm bảo timer dừng khi chuyển task
     }
-  } else {
-    setCurrentTaskTitle('Tập trung');
-    if (timeLeft === POMODORO_DURATION_DEFAULT && !isActive) {
-      resetTimer('pomodoro', POMODORO_DURATION_DEFAULT);
+  }, [params.taskId, params.taskTitle, params.taskPomodoroDuration]);
+
+
+  const resetTimer = useCallback((newModeParam?: TimerMode) => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
-  }
-}, [params, resetTimer, timeLeft, isActive]);
+    setIsActive(false); // Luôn dừng timer khi reset
+
+    const targetMode = newModeParam || mode; // Nếu không truyền mode mới, giữ mode hiện tại
+    setMode(targetMode);
+    setTimeLeft(getInitialTimeForMode(targetMode)); // QUAN TRỌNG: Đặt thời gian dựa trên mode mới
+  }, [mode, getInitialTimeForMode]);
 
 
-  // --- Xử lý AppState (active/background) ---
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
@@ -132,23 +143,24 @@ export default function PomodoroScreen() {
     };
   }, [isActive]);
 
-  // --- Hàm xử lý khi timer kết thúc ---
   const handleTimerEnd = useCallback(async () => {
-    setIsActive(false); // Dừng timer
-
+    setIsActive(false);
     playSound();
 
     let nextMode: TimerMode = 'pomodoro';
-    let nextDuration = POMODORO_DURATION_DEFAULT;
+    let nextDuration = getInitialTimeForMode('pomodoro'); // Lấy thời lượng cho pomodoro tiếp theo
 
     if (mode === 'pomodoro') {
       const newPomodoroCount = pomodoroCount + 1;
       setPomodoroCount(newPomodoroCount);
-      if (currentTaskId) {
-        const taskRef = ref(db, `tasks/${currentTaskId}`);
+
+      if (currentTaskId && user) {
+        const taskRefDb = ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{currentTaskId}`);
         try {
-          await update(taskRef, {
-            timeSpent: increment(POMODORO_DURATION_DEFAULT / 60),
+          // Cộng thời gian đã bỏ ra bằng thời lượng của phiên pomodoro VỪA KẾT THÚC
+          const pomodoroJustCompletedDurationMinutes = getInitialTimeForMode('pomodoro') / 60; // Thời gian này là của phiên vừa xong
+          await update(taskRefDb, {
+            timeSpent: increment(pomodoroJustCompletedDurationMinutes),
             completedPomodoros: increment(1)
           });
         } catch (error) {
@@ -156,56 +168,54 @@ export default function PomodoroScreen() {
         }
       }
       nextMode = (newPomodoroCount % 4 === 0) ? 'longBreak' : 'shortBreak';
-      nextDuration = (nextMode === 'longBreak') ? LONG_BREAK_DURATION_DEFAULT : SHORT_BREAK_DURATION_DEFAULT;
+      nextDuration = getInitialTimeForMode(nextMode);
     } else { // Kết thúc break
       nextMode = 'pomodoro';
-      nextDuration = POMODORO_DURATION_DEFAULT;
+      // nextDuration đã được đặt ở trên là getInitialTimeForMode('pomodoro')
     }
 
     setMode(nextMode);
     setTimeLeft(nextDuration);
-  }, [mode, pomodoroCount, currentTaskId, playSound]); // Dependencies của handleTimerEnd
+  }, [mode, pomodoroCount, currentTaskId, playSound, getInitialTimeForMode, db, user]);
 
-  // --- Logic chính của Timer: Tạo và hủy interval ---
   useEffect(() => {
-  if (isActive && timeLeft > 0) {
-    const intervalId = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) return 0;
-        return prev - 1;
-      });
-    }, 1000);
-    intervalRef.current = intervalId as unknown as number;
-  }
-
-  return () => {
-    if (intervalRef.current) {
+    if (isActive && timeLeft > 0) {
+      // setInterval trả về một number trong React Native/môi trường trình duyệt
+      intervalRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  };
-}, [isActive, timeLeft]); // ✅ thêm timeLeft
 
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isActive, timeLeft]);
 
-  // --- Xử lý khi timeLeft thực sự đạt 0 (và timer đang active) ---
  useEffect(() => {
-  if (timeLeft === 0 && isActive) {
-    handleTimerEnd();
-  }
-}, [timeLeft, isActive, handleTimerEnd]);
+    if (timeLeft === 0 && isActive) {
+        handleTimerEnd();
+    }
+  }, [timeLeft, isActive, handleTimerEnd]);
 
-
-  // --- Hàm bật/tắt timer ---
-const toggleTimer = () => {
-  const initialDuration = getInitialTimeForMode(mode);
-  if (timeLeft === 0 || timeLeft === initialDuration) {
-    setTimeLeft(initialDuration);
-    setIsActive(true);
-  } else {
+  const toggleTimer = () => {
+    const initialDurationForCurrentMode = getInitialTimeForMode(mode);
+    if (!isActive && (timeLeft === 0 || timeLeft === initialDurationForCurrentMode)) {
+      setTimeLeft(initialDurationForCurrentMode);
+    }
     setIsActive(prev => !prev);
-  }
-};
-  // --- Các hàm tiện ích hiển thị ---
+  };
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -221,12 +231,6 @@ const toggleTimer = () => {
     }
   };
 
-  const getInitialTimeForMode = (currentMode: TimerMode) => {
-    if (currentMode === 'pomodoro') return POMODORO_DURATION_DEFAULT;
-    if (currentMode === 'shortBreak') return SHORT_BREAK_DURATION_DEFAULT;
-    return LONG_BREAK_DURATION_DEFAULT;
-  };
-
   // --- JSX ---
   return (
     <ImageBackground
@@ -240,7 +244,7 @@ const toggleTimer = () => {
             <Ionicons name="chevron-back" size={32} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerText} numberOfLines={1} ellipsizeMode="tail">
-            {isActive ? getModeUserFriendlyText() : (timeLeft === getInitialTimeForMode(mode) ? getModeUserFriendlyText() : `Tiếp tục: ${getModeUserFriendlyText()}` )}
+            {isActive ? getModeUserFriendlyText() : (timeLeft === getInitialTimeForMode(mode) || timeLeft === 0 ? getModeUserFriendlyText() : `Tiếp tục: ${getModeUserFriendlyText()}` )}
           </Text>
           <View style={{width: 32}} />
         </View>
@@ -252,7 +256,7 @@ const toggleTimer = () => {
         <TouchableOpacity style={styles.mainActionButton} onPress={toggleTimer}>
           <Ionicons name={isActive ? "pause" : "play"} size={32} color="#1C1C2E" style={{marginRight: 10}} />
           <Text style={styles.mainActionButtonText}>
-            {isActive ? 'Tạm dừng' : (timeLeft === 0 ? 'Bắt đầu' : (timeLeft === getInitialTimeForMode(mode) ? (mode === 'pomodoro' ? 'Bắt đầu Tập trung' : 'Bắt đầu Nghỉ') : 'Tiếp tục'))}
+            {isActive ? 'Tạm dừng' : (timeLeft === 0 || timeLeft === getInitialTimeForMode(mode) ? (mode === 'pomodoro' ? 'Bắt đầu Tập trung' : 'Bắt đầu Nghỉ') : 'Tiếp tục')}
           </Text>
         </TouchableOpacity>
 
