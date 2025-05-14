@@ -13,11 +13,19 @@ const firebaseConfig = {
   appId: "1:77480527326:web:cd40e168a89e7868a0c94f",
 };
 
-// Khởi tạo Firebase
+
 if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+  console.log("ANDROID LOG - FirebaseConfig.js: Initializing Firebase app...");
+  try {
+    firebase.initializeApp(firebaseConfig);
+    console.log("ANDROID LOG - FirebaseConfig.js: Firebase app INITIALIZED. Apps length:", firebase.apps.length);
+  } catch (e) {
+    console.error("ANDROID LOG - FirebaseConfig.js: Error initializing app:", e);
+  }
+} else {
+  console.log("ANDROID LOG - FirebaseConfig.js: Firebase app ALREADY initialized. Apps length:", firebase.apps.length);
 }
 
 export const db = firebase.database();
-export const auth = firebase.auth(); // Nếu dùng xác thực
+export const auth = firebase.auth(); 
 export default firebase;

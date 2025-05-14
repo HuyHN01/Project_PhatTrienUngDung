@@ -1,28 +1,35 @@
 // app/(tabs)/index.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Button, Platform, Alert } from 'react-native';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Button, Platform, Alert, ScrollView
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { db } from '../../firebaseConfig'; // Điều chỉnh đường dẫn nếu cần
+import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { db } from '../../firebaseConfig';
 import { ref, onValue, push, set, update, remove } from 'firebase/database';
-import { styles } from './pomodoro.styles'; // Đường dẫn đến file styles
-// Interfaces
+import { styles } from './pomodoro.styles'; // Giả sử bạn đã tạo file này hoặc dùng style trực tiếp
+import { useAuth } from '../../context/AuthContext';
+
+// --- Interfaces ---
 interface Task {
   id: string;
   title: string;
   completed: boolean;
-  categoryKey: string; // 'today', 'tomorrow', 'thisWeek', 'planned', 'all', 'event'
+  categoryKey: string;
   createdAt: number;
-  dueDate?: number;
-  estimatedPomodoros?: number;
+  dueDate?: number | null;
+  scheduledAt?: number | null;
+  pomodoroDuration?: number;
+  scheduledTime?: string;
   completedPomodoros: number;
   timeSpent?: number; // in minutes
-  projectId?: string;
 }
+
 
 interface Category {
   title: string;
-  icon: keyof typeof Ionicons.glyphMap; // Để đảm bảo icon hợp lệ
+  icon: keyof typeof Ionicons.glyphMap;
   color: string;
   filterKey: Task['categoryKey'] | 'completed';
 }
@@ -32,13 +39,28 @@ const CATEGORIES: Category[] = [
   { title: 'Ngày mai', icon: 'alarm-outline', color: '#FF8C00', filterKey: 'tomorrow' },
   { title: 'Tuần này', icon: 'calendar-number-outline', color: '#6A5ACD', filterKey: 'thisWeek' },
   { title: 'Đã lên kế hoạch', icon: 'calendar-outline', color: '#87CEEB', filterKey: 'planned' },
-  // { title: 'Sự kiện', icon: 'megaphone-outline', color: '#00BFA5', filterKey: 'event' }, // Cần logic riêng
   { title: 'Tất cả', icon: 'file-tray-full-outline', color: '#2196F3', filterKey: 'all' },
   { title: 'Đã hoàn thành', icon: 'checkmark-done-circle-outline', color: '#32CD32', filterKey: 'completed' },
 ];
 
+const DEFAULT_POMODORO_DURATION = 25; // phút
+
+const formatDate = (timestamp?: number, includeTime: boolean = true): string => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (includeTime) {
+    return `${date.toLocaleDateString('vi-VN')} ${date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  return date.toLocaleDateString('vi-VN');
+};
+
 export default function HomeScreen() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
+  const [pomodoroDuration, setPomodoroDuration] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+  const [taskPomodoroDuration, setTaskPomodoroDuration] = useState(''); // For modal input
+  const [taskScheduledTime, setTaskScheduledTime] = useState('');
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
   const [selectedFilterKey, setSelectedFilterKey] = useState<Category['filterKey']>('today');
@@ -47,200 +69,318 @@ export default function HomeScreen() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // --- Firebase: Lấy danh sách công việc ---
-  useEffect(() => {
-    const tasksRef = ref(db, 'tasks'); // Giả sử node của bạn là 'tasks'
-    const unsubscribe = onValue(tasksRef, (snapshot) => {
-      const data = snapshot.val();
-      const loadedTasks: Task[] = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-      setAllTasks(loadedTasks);
-    });
-    return () => unsubscribe();
-  }, []);
+  // States cho DateTimePicker
+  const [isDeadlinePickerVisible, setDeadlinePickerVisibility] = useState(false);
+  const [customPomodoroDuration, setCustomPomodoroDuration] = useState(DEFAULT_POMODORO_DURATION.toString());
+  const [selectedDeadline, setSelectedDeadline] = useState<Date | undefined>(undefined);
+  const [selectedScheduledAt, setSelectedScheduledAt] = useState<Date | undefined>(undefined);
+  const [isScheduledAtPickerVisible, setScheduledAtPickerVisibility] = useState(false);
+  const handleLogout = async () => {
+    await signOut();
+    // RootLayout sẽ tự động điều hướng về login
+  };
 
-  // --- Lọc công việc ---
+  useEffect(() => {
+    if (user) { // Chỉ fetch tasks nếu đã có user
+      const tasksRef = ref(db, `users/${user.uid}/tasks`); // <--- THAY ĐỔI QUAN TRỌNG
+      const unsubscribe = onValue(tasksRef, (snapshot) => {
+        const data = snapshot.val();
+        const loadedTasks: Task[] = data ? Object.keys(data).map(key => ({
+          id: key,
+          ...data[key],
+        })) : [];
+        setAllTasks(loadedTasks);
+      });
+      return () => unsubscribe();
+    } else {
+      setAllTasks([]); 
+    }
+  }, [user]); 
+
   const filterAndSortTasks = useCallback(() => {
+    // ... (Giữ nguyên logic lọc, hoặc cập nhật nếu cần dựa trên scheduledAt)
+    // Ví dụ: mục "Hôm nay" có thể ưu tiên hiển thị các task có scheduledAt trong hôm nay
     let tempTasks = [...allTasks];
     const now = new Date();
-    const todayStart = new Date(now.setHours(0, 0, 0, 0)).getTime();
-    const todayEnd = new Date(now.setHours(23, 59, 59, 999)).getTime();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
 
     if (selectedFilterKey === 'completed') {
       tempTasks = tempTasks.filter(task => task.completed);
     } else {
-      tempTasks = tempTasks.filter(task => !task.completed); // Mặc định chỉ hiển thị task chưa hoàn thành
+      tempTasks = tempTasks.filter(task => !task.completed);
+      // Ưu tiên scheduledAt cho việc lọc 'Hôm nay', 'Ngày mai', 'Tuần này'
+      // Nếu không có scheduledAt, có thể dùng dueDate hoặc categoryKey như trước
       if (selectedFilterKey === 'today') {
-        tempTasks = tempTasks.filter(task => (task.dueDate && task.dueDate >= todayStart && task.dueDate <= todayEnd) || (!task.dueDate && task.categoryKey === 'today'));
+        tempTasks = tempTasks.filter(task =>
+          (task.scheduledAt && task.scheduledAt >= todayStart && task.scheduledAt <= todayEnd) ||
+          (!task.scheduledAt && task.dueDate && task.dueDate >= todayStart && task.dueDate <= todayEnd) ||
+          (!task.scheduledAt && !task.dueDate && task.categoryKey === 'today') // Fallback cuối cùng
+        );
       } else if (selectedFilterKey === 'tomorrow') {
-        const tomorrowStart = new Date(now.setDate(now.getDate() + 1)).setHours(0,0,0,0);
-        const tomorrowEnd = new Date(now.setDate(now.getDate())).setHours(23,59,59,999); // now date is already tomorrow
-        tempTasks = tempTasks.filter(task => task.dueDate && task.dueDate >= tomorrowStart && task.dueDate <= tomorrowEnd);
+        const tomorrowDate = new Date(todayStart);
+        tomorrowDate.setDate(new Date(todayStart).getDate() + 1);
+        const tomorrowStart = tomorrowDate.getTime();
+        const tomorrowEnd = new Date(tomorrowDate.getFullYear(), tomorrowDate.getMonth(), tomorrowDate.getDate(), 23, 59, 59, 999).getTime();
+        tempTasks = tempTasks.filter(task => task.scheduledAt && task.scheduledAt >= tomorrowStart && task.scheduledAt <= tomorrowEnd);
       } else if (selectedFilterKey === 'thisWeek') {
-        const weekStart = new Date(now.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1) )).setHours(0,0,0,0); // Monday
-        const weekEnd = new Date(now.setDate(now.getDate() - now.getDay() + 7)).setHours(23,59,59,999); // Sunday
-        tempTasks = tempTasks.filter(task => task.dueDate && task.dueDate >= weekStart && task.dueDate <= weekEnd);
+        const currentDay = now.getDay();
+        const firstDayOfWeek = new Date(now);
+        firstDayOfWeek.setDate(now.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
+        const weekStart = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate()).getTime();
+
+        const lastDayOfWeek = new Date(weekStart);
+        lastDayOfWeek.setDate(new Date(weekStart).getDate() + 6);
+        const weekEnd = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999).getTime();
+        tempTasks = tempTasks.filter(task => task.scheduledAt && task.scheduledAt >= weekStart && task.scheduledAt <= weekEnd);
+
       } else if (selectedFilterKey === 'planned') {
-          tempTasks = tempTasks.filter(task => task.dueDate && task.dueDate > todayEnd); // Các task có kế hoạch sau hôm nay
+          tempTasks = tempTasks.filter(task => (task.scheduledAt && task.scheduledAt > todayEnd) || (task.dueDate && task.dueDate > todayEnd));
       }
-      // 'all' không cần lọc thêm (ngoài việc chưa hoàn thành)
     }
-    // Sắp xếp: công việc chưa hoàn thành lên trước, sau đó theo ngày tạo mới nhất
-    tempTasks.sort((a, b) => (a.completed === b.completed) ? (b.createdAt - a.createdAt) : (a.completed ? 1 : -1));
+    tempTasks.sort((a, b) => {
+        if (a.completed !== b.completed) return a.completed ? 1 : -1;
+        const aTime = a.scheduledAt || a.dueDate;
+        const bTime = b.scheduledAt || b.dueDate;
+        if (aTime && bTime) return aTime - bTime;
+        if (aTime) return -1;
+        if (bTime) return 1;
+        return b.createdAt - a.createdAt;
+    });
     setFilteredTasks(tempTasks);
   }, [allTasks, selectedFilterKey]);
+
 
   useEffect(() => {
     filterAndSortTasks();
   }, [filterAndSortTasks]);
+
+  const showDeadlinePicker = () => setDeadlinePickerVisibility(true);
+  const hideDeadlinePicker = () => setDeadlinePickerVisibility(false);
+  const handleConfirmDeadline = (date: Date) => {
+    setSelectedDeadline(date);
+    hideDeadlinePicker();
+  };
+
+  const showScheduledAtPicker = () => setScheduledAtPickerVisibility(true);
+  const hideScheduledAtPicker = () => setScheduledAtPickerVisibility(false);
+  const handleConfirmScheduledAt = (date: Date) => {
+    setSelectedScheduledAt(date);
+    hideScheduledAtPicker();
+  };
 
 
   const handleOpenModal = (taskToEdit: Task | null = null) => {
     if (taskToEdit) {
       setEditingTask(taskToEdit);
       setNewTaskTitle(taskToEdit.title);
+      // Load existing values or default for editing
+      setTaskPomodoroDuration(taskToEdit.pomodoroDuration?.toString() || DEFAULT_POMODORO_DURATION.toString());
+      setTaskScheduledTime(taskToEdit.scheduledTime || ''); // Assuming scheduledTime is "HH:mm"
+      setSelectedDeadline(taskToEdit.dueDate ? new Date(taskToEdit.dueDate) : undefined);
+      setSelectedScheduledAt(taskToEdit.scheduledAt ? new Date(taskToEdit.scheduledAt) : undefined); // For full date-time picker
     } else {
       setEditingTask(null);
       setNewTaskTitle('');
+      // Defaults for new task
+      setTaskPomodoroDuration(DEFAULT_POMODORO_DURATION.toString());
+      setTaskScheduledTime('');
+      setSelectedDeadline(undefined);
+      setSelectedScheduledAt(undefined);
     }
     setTaskModalVisible(true);
   };
 
   const handleSaveTask = async () => {
-    if (newTaskTitle.trim() === '') {
-      Alert.alert("Lỗi", "Tên công việc không được để trống.");
+    if (!user) {
+      Alert.alert("Lỗi", "Bạn cần đăng nhập để lưu công việc.");
       return;
     }
 
-    const taskData = {
-      title: newTaskTitle,
-      completedPomodoros: editingTask?.completedPomodoros || 0,
-      timeSpent: editingTask?.timeSpent || 0,
-      // Thêm các trường khác như dueDate, estimatedPomodoros nếu có input trong modal
-    };
+    const durationMinutes = parseInt(taskPomodoroDuration, 10);
+    if (isNaN(durationMinutes) || durationMinutes <= 0) {
+      Alert.alert("Lỗi", "Thời lượng Pomodoro không hợp lệ. Phải là số dương.");
+      return;
+    }
 
-    try {
-      if (editingTask) { // Cập nhật công việc
-        await update(ref(db, `tasks/${editingTask.id}`), {
-            ...editingTask, // Giữ lại các trường cũ không thay đổi
-            title: newTaskTitle,
-            // Cập nhật các trường khác nếu có
-        });
+   let firebaseDueDate: number | null | undefined = selectedDeadline ? selectedDeadline.getTime() : (editingTask ? editingTask.dueDate : undefined);
+     if (editingTask && selectedDeadline === undefined && editingTask.dueDate !== undefined) {
+        firebaseDueDate = null; // User cleared the date
+    }
+
+  let firebaseScheduledAt: number | null | undefined = selectedScheduledAt ? selectedScheduledAt.getTime() : (editingTask ? editingTask.scheduledAt : undefined);
+    if (editingTask && selectedScheduledAt === undefined && editingTask.scheduledAt !== undefined) {
+        firebaseScheduledAt = null; // User cleared the date/time
+    }
+
+  try {
+      if (editingTask) {
+        const updatePayload: Partial<Task> = {
+          title: newTaskTitle,
+          pomodoroDuration: durationMinutes,
+          scheduledTime: taskScheduledTime, // Save the "HH:mm" string
+          // If you use a DateTimePicker for scheduledTime, you'd save its timestamp here
+        };
+        
+        if (firebaseDueDate !== undefined) {
+          updatePayload.dueDate = firebaseDueDate === null ? null : firebaseDueDate;
+        }
+         if (firebaseScheduledAt !== undefined) {
+          updatePayload.scheduledAt = firebaseScheduledAt === null ? null : firebaseScheduledAt;
+        }
+
+        await update(ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{editingTask.id}`), updatePayload); // <--- THAY ĐỔI
         Alert.alert("Thành công", "Đã cập nhật công việc.");
-      } else { // Thêm công việc mới
-        const newTaskRef = push(ref(db, 'tasks'));
-        const newTask: Omit<Task, 'id'> = {
+      } else {
+        const newTaskRef = push(ref(db, `users/${user.uid}/tasks`));
+        const newTaskData: Omit<Task, 'id'> = {
           title: newTaskTitle,
           completed: false,
-          categoryKey: selectedFilterKey !== 'completed' && selectedFilterKey !== 'all' ? selectedFilterKey : 'today', // Mặc định cho vào "Hôm nay" nếu đang ở mục "Đã hoàn thành" hoặc "Tất cả"
+          categoryKey:
+            selectedFilterKey !== 'completed' && selectedFilterKey !== 'all'
+              ? selectedFilterKey
+              : 'today',
           createdAt: Date.now(),
+          dueDate: firebaseDueDate,
+          scheduledAt: firebaseScheduledAt, // Timestamp from DateTimePicker
+          pomodoroDuration: durationMinutes, // Custom duration for this task
+          scheduledTime: taskScheduledTime, // "HH:mm" string for display
           completedPomodoros: 0,
           timeSpent: 0,
-          // dueDate: ... // Xử lý dueDate nếu có trường nhập
         };
-        await set(newTaskRef, newTask);
+        await set(newTaskRef, newTaskData);
         Alert.alert("Thành công", "Đã thêm công việc mới.");
       }
+
       setTaskModalVisible(false);
+      // Reset states
       setNewTaskTitle('');
       setEditingTask(null);
+      setTaskPomodoroDuration(DEFAULT_POMODORO_DURATION.toString());
+      setTaskScheduledTime('');
+      setSelectedDeadline(undefined);
+      setSelectedScheduledAt(undefined);
+
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Một lỗi không xác định đã xảy ra.";
       console.error("Lỗi lưu công việc: ", error);
-      Alert.alert("Lỗi", "Không thể lưu công việc. Vui lòng thử lại.");
+      Alert.alert("Lỗi", `Không thể lưu công việc. ${errorMessage}`);
     }
   };
+
 
   const toggleTaskCompletion = async (task: Task) => {
+    if (!user) return;
     try {
-      await update(ref(db, `tasks/${task.id}`), { completed: !task.completed });
+      await update(ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{task.id}`), { // <--- THAY ĐỔI
+        completed: !task.completed
+      });
     } catch (error) {
       console.error("Lỗi cập nhật trạng thái công việc: ", error);
-      Alert.alert("Lỗi", "Không thể cập nhật trạng thái.");
+      Alert.alert("Lỗi", "Không thể cập nhật trạng thái công việc.");
     }
   };
-
   const handleDeleteTask = (taskId: string) => {
+    if (!user) return;
     Alert.alert(
       "Xác nhận xóa",
       "Bạn có chắc chắn muốn xóa công việc này không?",
       [
-        { text: "Hủy", style: "cancel" },
-        { text: "Xóa", style: "destructive", onPress: async () => {
+        {
+          text: "Hủy",
+          style: "cancel"
+        },
+        {
+          text: "Xóa",
+          onPress: async () => {
             try {
-              await remove(ref(db, `tasks/${taskId}`));
+              await remove(ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{taskId}`)); // <--- THAY ĐỔI
+              Alert.alert("Thành công", "Đã xóa công việc.");
+              // Việc cập nhật danh sách allTasks và filteredTasks sẽ tự động xảy ra
+              // nhờ vào onValue listener của Firebase, hoặc bạn có thể gọi filterAndSortTasks()
+              // nếu muốn cập nhật ngay lập tức mà không chờ listener.
             } catch (error) {
               console.error("Lỗi xóa công việc: ", error);
               Alert.alert("Lỗi", "Không thể xóa công việc.");
             }
-          }
+          },
+          style: "destructive"
         }
       ]
     );
   };
-
-  const renderCategoryItem = ({ item }: { item: Category }) => {
-    // Đếm số lượng task cho từng category (chưa hoàn thành, trừ mục "Đã hoàn thành")
+  const renderCategoryItem = ({ item }: { item: Category }) => { /* ... cập nhật logic đếm dựa trên scheduledAt nếu muốn ... */
     let count = 0;
+    const nowForCategory = new Date();
+    const todayStartForCategory = new Date(nowForCategory.getFullYear(), nowForCategory.getMonth(), nowForCategory.getDate()).getTime();
+    const todayEndForCategory = new Date(nowForCategory.getFullYear(), nowForCategory.getMonth(), nowForCategory.getDate(), 23, 59, 59, 999).getTime();
+
     if (item.filterKey === 'completed') {
         count = allTasks.filter(task => task.completed).length;
     } else {
-        // Tạm thời dùng allTasks để đếm cho đơn giản, bạn có thể tối ưu bằng cách lọc như filterAndSortTasks
+        const pendingTasks = allTasks.filter(t => !t.completed);
         if (item.filterKey === 'all') {
-            count = allTasks.filter(task => !task.completed).length;
+            count = pendingTasks.length;
         } else if (item.filterKey === 'today') {
-             const now = new Date();
-             const todayStart = new Date(now.setHours(0, 0, 0, 0)).getTime();
-             const todayEnd = new Date(now.setHours(23, 59, 59, 999)).getTime();
-             count = allTasks.filter(task => !task.completed && ((task.dueDate && task.dueDate >= todayStart && task.dueDate <= todayEnd) || (!task.dueDate && task.categoryKey === 'today'))).length;
+            count = pendingTasks.filter(t =>
+                (t.scheduledAt && t.scheduledAt >= todayStartForCategory && t.scheduledAt <= todayEndForCategory) ||
+                (!t.scheduledAt && t.dueDate && t.dueDate >= todayStartForCategory && t.dueDate <= todayEndForCategory) ||
+                (!t.scheduledAt && !t.dueDate && t.categoryKey === 'today')
+            ).length;
         }
-        // Thêm logic đếm cho các category khác nếu cần
+        // Thêm logic đếm cho các category khác
     }
-
-
     return (
         <TouchableOpacity
-        style={[
-            styles.categoryPill,
-            selectedFilterKey === item.filterKey && styles.activeCategoryPill
-        ]}
-        onPress={() => setSelectedFilterKey(item.filterKey)}
+            style={[styles.categoryPill, selectedFilterKey === item.filterKey && styles.activeCategoryPill]}
+            onPress={() => setSelectedFilterKey(item.filterKey)}
         >
-        <Ionicons name={item.icon} size={18} color={selectedFilterKey === item.filterKey ? '#121212' : item.color} style={styles.categoryPillIcon} />
-        <Text style={[styles.categoryPillText, selectedFilterKey === item.filterKey && styles.activeCategoryPillText]}>{item.title}</Text>
-        {count > 0 && <Text style={[styles.categoryPillCount, selectedFilterKey === item.filterKey && styles.activeCategoryPillCount]}>{count}</Text>}
+            <Ionicons name={item.icon} size={18} color={selectedFilterKey === item.filterKey ? '#121212' : item.color} style={styles.categoryPillIcon} />
+            <Text style={[styles.categoryPillText, selectedFilterKey === item.filterKey && styles.activeCategoryPillText]}>{item.title}</Text>
+            {count > 0 && <Text style={[styles.categoryPillCount, selectedFilterKey === item.filterKey && styles.activeCategoryPillCount]}>{count}</Text>}
         </TouchableOpacity>
     );
-  }
+  };
 
   const renderTaskItem = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
-      <TouchableOpacity onPress={() => toggleTaskCompletion(item)} style={styles.taskCheckButton}>
-        <Ionicons
-          name={item.completed ? 'checkmark-circle' : 'ellipse-outline'}
-          size={28}
-          color={item.completed ? '#32CD32' : '#aaa'}
-        />
-      </TouchableOpacity>
+      {/* ... other elements ... */}
       <TouchableOpacity style={styles.taskTitleContainer} onPress={() => handleOpenModal(item)}>
-        <Text style={[styles.taskCardTitle, item.completed && styles.completedTaskTitle]}>
-          {item.title}
-        </Text>
-        {/* Hiển thị thêm thông tin như số Pomodoro */}
-        {(item.estimatedPomodoros || item.completedPomodoros > 0) && (
-            <Text style={styles.pomodoroInfoText}>
-                {item.completedPomodoros || 0} / {item.estimatedPomodoros || '?'} Pomodoros
-            </Text>
+        <Text style={[styles.taskCardTitle, item.completed && styles.completedTaskTitle]}>{item.title}</Text>
+        {/* Display scheduledTime if available */}
+        {item.scheduledTime && (
+          <Text style={[styles.scheduledAtText, item.completed && styles.completedTaskTitle]}>
+            <Ionicons name="alarm-outline" size={13} color={item.completed ? '#777' : '#4CAF50'} /> Giờ làm: {item.scheduledTime}
+          </Text>
         )}
-
+        {item.scheduledAt && (
+          <Text style={[styles.scheduledAtText, { color: item.completed ? '#777' : '#FF8C00' /* Slightly different color or combine with above */}, item.completed && styles.completedTaskTitle]}>
+            <Ionicons name="time-outline" size={13} color={item.completed ? '#777' : '#FF8C00'} /> Bắt đầu: {formatDate(item.scheduledAt)}
+          </Text>
+        )}
+        {/* ... (dueDate display) ... */}
+        <Text style={styles.pomodoroInfoText}>
+            Pomo: {item.pomodoroDuration || DEFAULT_POMODORO_DURATION} phút | HT: {item.completedPomodoros ?? 0}
+        </Text>
       </TouchableOpacity>
+
       {!item.completed && (
         <TouchableOpacity
           style={styles.playButton}
-          onPress={() => router.push({ pathname: '../(tabs)/pomodoro', params: { taskId: item.id, taskTitle: item.title } })}
+          onPress={() => router.push({
+            pathname: '/(tabs)/pomodoro',
+            params: {
+              taskId: item.id,
+              taskTitle: item.title,
+              // Pass the task's specific duration, or default if not set
+              taskPomodoroDuration: (item.pomodoroDuration || DEFAULT_POMODORO_DURATION).toString()
+            }
+          })}
         >
           <Ionicons name="play-outline" size={28} color="#FF6F00" />
         </TouchableOpacity>
       )}
-       <TouchableOpacity onPress={() => handleDeleteTask(item.id)} style={styles.deleteButton}>
+      <TouchableOpacity onPress={() => handleDeleteTask(item.id)} style={styles.deleteButton}>
         <Ionicons name="trash-outline" size={22} color="#FF3B30" />
       </TouchableOpacity>
     </View>
@@ -248,46 +388,44 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.screenContainer}>
-      {/* Header */}
-      <View style={styles.mainHeader}>
-        <TouchableOpacity onPress={() => console.log("Mở Profile/Xác thực")}>
-          <Ionicons name="person-circle-outline" size={38} color="#fff" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => console.log("Mở Profile/Xác thực")}>
-          <Text style={styles.authText}>Đăng Nhập | Đăng ký</Text>
-        </TouchableOpacity>
-        <View style={styles.headerActionIcons}>
-          <Ionicons name="notifications-outline" size={26} color="#fff" style={styles.actionIcon} />
-          <Ionicons name="leaf-outline" size={26} color="#fff" style={styles.actionIcon} />
-          <Ionicons name="trophy-outline" size={26} color="#fff" style={styles.actionIcon} />
+        <View style={styles.mainHeader}>
+            {user ? (
+          <>
+            <Text style={styles.authText}>Chào, {user.displayName || user.email}</Text>
+            <TouchableOpacity onPress={handleLogout} style={{ marginLeft: 'auto' }}>
+              <Ionicons name="log-out-outline" size={28} color="#FF6F00" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
+            <Text style={styles.authText}>Đăng Nhập | Đăng ký</Text>
+          </TouchableOpacity>
+        )}
+            <View style={styles.headerActionIcons}>
+            <Ionicons name="notifications-outline" size={26} color="#fff" style={styles.actionIcon} />
+            <Ionicons name="leaf-outline" size={26} color="#fff" style={styles.actionIcon} />
+            <Ionicons name="trophy-outline" size={26} color="#fff" style={styles.actionIcon} />
+            </View>
         </View>
-      </View>
-
-      {/* Search bar */}
-      <View style={styles.searchContainer}>
-        <TextInput style={styles.searchInputStyle} placeholder="🔍  Tìm kiếm công việc..." placeholderTextColor="#888" />
-      </View>
-
-      {/* Category Pills */}
-      <View style={{ height: 55, marginBottom: 15}}>
-        <FlatList
-            data={CATEGORIES}
-            renderItem={renderCategoryItem}
-            keyExtractor={(item) => item.filterKey}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesListContainer}
-        />
-      </View>
-
-      {/* Task List Header */}
-      <View style={styles.taskListHeader}>
-          <Text style={styles.currentCategoryTitle}>
-              {CATEGORIES.find(cat => cat.filterKey === selectedFilterKey)?.title || "Công việc"}
-          </Text>
-          {/* Có thể thêm nút "+" nhỏ ở đây nếu không dùng FAB */}
-      </View>
-
+        <View style={styles.searchContainer}>
+            <TextInput style={styles.searchInputStyle} placeholder="🔍  Tìm kiếm công việc..." placeholderTextColor="#888" />
+        </View>
+        <View style={{ height: 55, marginBottom: 15}}>
+            <FlatList
+                data={CATEGORIES}
+                renderItem={renderCategoryItem}
+                keyExtractor={(item) => item.filterKey}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoriesListContainer}
+            />
+        </View>
+        <View style={styles.taskListHeader}>
+            <Text style={styles.currentCategoryTitle}>
+                {CATEGORIES.find(cat => cat.filterKey === selectedFilterKey)?.title || "Công việc"}
+            </Text>
+        </View>
+      {/* Task List */}
       {filteredTasks.length === 0 ? (
         <View style={styles.emptyStateContainer}>
             <Ionicons name="file-tray-outline" size={60} color="#555" />
@@ -299,53 +437,164 @@ export default function HomeScreen() {
             data={filteredTasks}
             renderItem={renderTaskItem}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingBottom: 150 }} // Để không bị che bởi FAB và pomodoro button
+            contentContainerStyle={{ paddingBottom: 150 }}
         />
       )}
 
       {/* Add/Edit Task Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isTaskModalVisible}
-        onRequestClose={() => setTaskModalVisible(false)}
-      >
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setTaskModalVisible(false)}>
-            <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-                <Text style={styles.modalFormTitle}>{editingTask ? "Sửa công việc" : "Thêm công việc mới"}</Text>
-                <TextInput
-                style={styles.modalFormInput}
-                placeholder="Tên công việc..."
-                placeholderTextColor="#999"
-                value={newTaskTitle}
-                onChangeText={setNewTaskTitle}
-                autoFocus
-                />
-                {/* TODO: Thêm các trường nhập liệu khác: dueDate, estimatedPomodoros,... */}
-                <View style={styles.modalActionButtons}>
-                    <Button title="Hủy" onPress={() => setTaskModalVisible(false)} color="#FF3B30" />
-                    <View style={{width: 20}}/>
-                    <Button title={editingTask ? "Lưu" : "Thêm"} onPress={handleSaveTask} color="#FF6F00"/>
-                </View>
-            </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+  <Modal
+      animationType="slide"
+      transparent={true}
+      visible={isTaskModalVisible}
+      onRequestClose={() => setTaskModalVisible(false)}
+    >
+      <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setTaskModalVisible(false)}>
+        <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+          <Text style={styles.modalFormTitle}>
+            {editingTask ? "Sửa công việc" : "Thêm công việc mới"}
+          </Text>
 
-      {/* FAB for adding task */}
-      {selectedFilterKey !== 'completed' && ( // Chỉ hiển thị FAB nếu không ở mục "Đã hoàn thành"
+          <TextInput
+            style={styles.modalFormInput}
+            placeholder="Tên công việc..."
+            placeholderTextColor="#999"
+            value={newTaskTitle}
+            onChangeText={setNewTaskTitle}
+            autoFocus
+          />
+
+          {/* Thời lượng Pomodoro cho công việc này */}
+          <Text style={newModalStyles.modalLabel}>Thời lượng Pomodoro (phút):</Text>
+          <TextInput
+            style={styles.modalFormInput}
+            placeholder={`Mặc định: ${DEFAULT_POMODORO_DURATION} phút`}
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            value={taskPomodoroDuration} // Use taskPomodoroDuration state
+            onChangeText={setTaskPomodoroDuration} // Use setTaskPomodoroDuration state
+          />
+
+          {/* Thời gian thực hiện công việc (HH:mm) */}
+          <Text style={newModalStyles.modalLabel}>Thời gian thực hiện (HH:mm):</Text>
+          <TextInput
+            style={styles.modalFormInput}
+            placeholder="Ví dụ: 08:30 (để trống nếu không có)"
+            placeholderTextColor="#999"
+            value={taskScheduledTime} // Use taskScheduledTime state
+            onChangeText={setTaskScheduledTime} // Use setTaskScheduledTime state
+          />
+
+          {/* Nút chọn Deadline (DueDate) */}
+          <Text style={newModalStyles.modalLabel}>Deadline (Ngày hết hạn):</Text>
+          <TouchableOpacity onPress={showDeadlinePicker} style={newModalStyles.datePickerButton}>
+            <Ionicons name="calendar-outline" size={20} color="#FF6F00" style={{ marginRight: 10 }}/>
+            <Text style={newModalStyles.datePickerButtonText}>
+              {selectedDeadline ? formatDate(selectedDeadline.getTime(), false) : "Chọn ngày hết hạn"}
+            </Text>
+          </TouchableOpacity>
+          {selectedDeadline && (
+            <TouchableOpacity onPress={() => setSelectedDeadline(undefined)} style={newModalStyles.clearDateButton}>
+              <Text style={newModalStyles.clearDateButtonText}>Xóa Deadline</Text>
+            </TouchableOpacity>
+          )}
+
+
+          {/* Nút chọn Thời gian bắt đầu (ScheduledAt) */}
+          <Text style={newModalStyles.modalLabel}>Lên lịch bắt đầu (Ngày & Giờ):</Text>
+          <TouchableOpacity onPress={showScheduledAtPicker} style={newModalStyles.datePickerButton}>
+             <Ionicons name="time-outline" size={20} color="#FF6F00" style={{ marginRight: 10 }}/>
+            <Text style={newModalStyles.datePickerButtonText}>
+              {selectedScheduledAt ? formatDate(selectedScheduledAt.getTime(), true) : "Chọn ngày & giờ bắt đầu"}
+            </Text>
+          </TouchableOpacity>
+          {selectedScheduledAt && (
+            <TouchableOpacity onPress={() => setSelectedScheduledAt(undefined)} style={newModalStyles.clearDateButton}>
+              <Text style={newModalStyles.clearDateButtonText}>Xóa Lịch</Text>
+            </TouchableOpacity>
+          )}
+
+
+          <View style={styles.modalActionButtons}>
+            <Button title="Hủy" onPress={() => setTaskModalVisible(false)} color="#FF3B30" />
+            <View style={{ width: 20 }} />
+            <Button title={editingTask ? "Lưu" : "Thêm"} onPress={handleSaveTask} color="#FF6F00" />
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+      {/* Deadline Picker Modal */}
+      <DateTimePickerModal
+        isVisible={isDeadlinePickerVisible}
+        mode="date" // Chỉ chọn ngày cho deadline
+        onConfirm={handleConfirmDeadline}
+        onCancel={hideDeadlinePicker}
+        date={selectedDeadline || new Date()}
+        minimumDate={new Date()}
+        locale="vi_VN"
+        display={Platform.OS === 'ios' ? 'inline' : 'default'} // inline cho iOS đẹp hơn
+      />
+      {/* ScheduledAt Picker Modal */}
+      <DateTimePickerModal
+        isVisible={isScheduledAtPickerVisible}
+        mode="datetime" // Chọn cả ngày và giờ
+        onConfirm={handleConfirmScheduledAt}
+        onCancel={hideScheduledAtPicker}
+        date={selectedScheduledAt || new Date()}
+        minimumDate={new Date()}
+        locale="vi_VN"
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        is24Hour={true}
+      />
+
+      {/* FAB và Pomodoro Nav Button */}
+       {selectedFilterKey !== 'completed' && (
         <TouchableOpacity style={styles.floatingActionButton} onPress={() => handleOpenModal()}>
             <Ionicons name="add" size={32} color="white" />
         </TouchableOpacity>
       )}
-
-
-      {/* Pomodoro navigation button (fixed at bottom center) */}
-      <TouchableOpacity style={styles.bottomPomodoroButton} onPress={() => router.push('../(tabs)/pomodoro')}>
-        {/* TODO: Hiển thị thời gian Pomodoro hiện tại nếu đang chạy, hoặc icon */}
+      <TouchableOpacity style={styles.bottomPomodoroButton} onPress={() => router.push('/(tabs)/pomodoro')}>
         <Ionicons name="timer-outline" size={30} color="white" />
-        {/* <Text style={styles.bottomPomodoroText}>60</Text> */}
       </TouchableOpacity>
     </View>
   );
 }
+
+const newModalStyles = StyleSheet.create({
+  modalLabel: {
+    fontSize: 14,
+    color: '#ccc',
+    marginBottom: 8,
+    marginLeft: 5,
+    marginTop: 10,
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    marginBottom: 5,
+  },
+  datePickerButtonText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  clearDateButton: {
+    alignSelf: 'flex-start',
+    marginTop: 0,
+    marginBottom: 15,
+    paddingVertical: 5,
+  },
+  clearDateButtonText: {
+    color: '#FF6F00',
+    fontSize: 13,
+  },
+  scheduledAtText: {
+    color: '#FF8C00', // Màu khác cho thời gian thực hiện
+    fontSize: 13,
+    marginTop: 4,
+  },
+  // ... (Sao chép các style còn lại từ styles.ts của bạn và hợp nhất nếu cần)
+});
 

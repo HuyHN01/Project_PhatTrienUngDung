@@ -1,4 +1,3 @@
-// app/(tabs)/pomodoro.styles.ts
 import { StyleSheet, Platform } from 'react-native';
 
 export const styles = StyleSheet.create({
@@ -317,5 +316,44 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 15,
     marginBottom: 20,
+  },
+  modalLabel: {
+  fontSize: 16,
+  fontWeight: '600',
+  color: '#333',
+  marginBottom: 5,
+  },
+
+  scheduledAtText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
+  },datePickerButton: {
+  paddingVertical: 8,
+  paddingHorizontal: 12,
+  backgroundColor: '#FFF3E0',
+  borderRadius: 8,
+  alignItems: 'center',
+  marginTop: 8,
+  },
+
+  clearDateButton: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  dueDateText: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+  },datePickerButtonText: {
+  fontSize: 16,
+  color: '#FF6F00',
+  fontWeight: '500',
+  },
+
+  clearDateButtonText: {
+    fontSize: 14,
+    color: '#FF3B30',
+    textDecorationLine: 'underline',
   }
 });
