@@ -1,7 +1,7 @@
 // Pomodoro/app/(auth)/register.tsx
-import React, { useState } from 'react';
-import { View, Text, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 // Import auth và db (Realtime Database instance) từ firebaseConfig
 import { auth as firebaseAuthServiceFromConfig, db as realtimeDB } from '../../firebaseConfig';
 import { styles } from './auth.styles';
@@ -42,15 +42,10 @@ export default function RegisterScreen() {
           email: email.trim(),
           createdAt: Date.now(),
         };
-
-        // Sử dụng realtimeDB (instance của Realtime Database) đã import từ firebaseConfig
-        // Đây là cách của SDK v8 (compat)
         await realtimeDB.ref('users/' + user.uid).set(userData);
-
-        // Nếu bạn muốn dùng SDK v9 modular hoàn toàn (cần import ref, set từ 'firebase/database'):
-        // await set(ref(realtimeDB, 'users/' + user.uid), userData);
-
         console.log('RegisterScreen: User registered successfully with email:', email, 'and username:', username);
+        router.replace('/(tabs)/index' as any); 
+
       }
     } catch (error: any) {
       console.error("Lỗi đăng ký REGISTER_SCREEN: ", error);

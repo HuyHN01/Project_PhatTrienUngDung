@@ -1,13 +1,8 @@
-// Pomodoro/app/(auth)/login.tsx
-import React, { useState } from 'react';
-import { View, Text, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { styles } from './auth.styles';
-// Import auth và db (Realtime Database instance) từ firebaseConfig
+import React, { useState } from 'react';
+import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { auth as firebaseAuthServiceFromConfig, db as realtimeDB } from '../../firebaseConfig';
-// Import các hàm của Realtime Database nếu bạn muốn dùng SDK v9 modular (nhưng hiện tại đang dùng v8 compat)
-// import { ref as rtdbRef, query as rtdbQuery, orderByChild, equalTo, get } from 'firebase/database';
-
+import { styles } from './auth.styles';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -27,23 +22,13 @@ export default function LoginScreen() {
 
       if (!emailToLogin.includes('@') && emailToLogin.length > 0) {
         console.log(`Đang tìm email cho username: ${enteredUsername}`);
-
-        // Sử dụng realtimeDB (instance của Realtime Database) đã import từ firebaseConfig
-        // Đây là cách của SDK v8 (compat)
         const usersNodeRef = realtimeDB.ref('users');
         const query = usersNodeRef.orderByChild('username').equalTo(enteredUsername);
         const snapshot = await query.once('value'); // Thực thi query trực tiếp trên đối tượng query
 
-        // Nếu bạn muốn dùng SDK v9 modular hoàn toàn (cần import các hàm):
-        // const usersRef = rtdbRef(realtimeDB, 'users');
-        // const q = rtdbQuery(usersRef, orderByChild('username'), equalTo(enteredUsername));
-        // const snapshot = await get(q);
-
         if (snapshot.exists()) {
           const usersData = snapshot.val();
-          // Vì query có thể trả về nhiều kết quả nếu username không unique (mặc dù không nên)
-          // Lấy user đầu tiên tìm thấy
-          const userId = Object.keys(usersData)[0];
+         const userId = Object.keys(usersData)[0];
           if (usersData[userId] && usersData[userId].email) {
             emailToLogin = usersData[userId].email;
             console.log(`Đã tìm thấy email: ${emailToLogin} cho username: ${enteredUsername}`);
@@ -61,7 +46,7 @@ export default function LoginScreen() {
 
       console.log(`Đang thử đăng nhập với email: ${emailToLogin}`);
       await firebaseAuthServiceFromConfig.signInWithEmailAndPassword(emailToLogin, password);
-
+      router.replace('../index'); // Chuyển hướng đến trang chính sau khi đăng nhập thành công
     } catch (error: any) {
       console.error("Lỗi đăng nhập LOGIN_SCREEN: ", error);
       let errorMessage = "Đã có lỗi xảy ra khi đăng nhập. Vui lòng thử lại.";

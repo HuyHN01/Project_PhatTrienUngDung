@@ -1,15 +1,24 @@
 // app/(tabs)/index.tsx
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Button, Platform, Alert, ScrollView
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { onValue, push, ref, remove, set, update } from 'firebase/database';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  Button,
+  FlatList,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { db } from '../../firebaseConfig';
-import { ref, onValue, push, set, update, remove } from 'firebase/database';
-import { styles } from './pomodoro.styles'; // Giả sử bạn đã tạo file này hoặc dùng style trực tiếp
 import { useAuth } from '../../context/AuthContext';
+import { db } from '../../firebaseConfig';
+import { styles } from './pomodoro.styles'; // Giả sử bạn đã tạo file này hoặc dùng style trực tiếp
 
 // --- Interfaces ---
 interface Task {
@@ -90,6 +99,23 @@ export default function HomeScreen() {
           ...data[key],
         })) : [];
         setAllTasks(loadedTasks);
+        const updates: Record<string, any> = {};
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+
+        loadedTasks.forEach(task => {
+          if (!task.completed && (task.categoryKey === 'today' || task.categoryKey === 'tomorrow')) {
+            // Nếu task chưa hoàn thành và thuộc "hôm nay" hoặc "ngày mai"
+            // thì chuyển nó sang "planned"
+            updates[`users/${user.uid}/tasks/${task.id}/categoryKey`] = 'planned';
+          }
+        });
+
+        if (Object.keys(updates).length > 0) {
+          update(ref(db), updates);
+        }
+
       });
       return () => unsubscribe();
     } else {
@@ -182,12 +208,22 @@ export default function HomeScreen() {
     } else {
       setEditingTask(null);
       setNewTaskTitle('');
-      // Defaults for new task
       setTaskPomodoroDuration(DEFAULT_POMODORO_DURATION.toString());
       setTaskScheduledTime('');
-      setSelectedDeadline(undefined);
-      setSelectedScheduledAt(undefined);
-    }
+
+      const now = new Date();
+      let defaultDate = new Date(now);
+
+      if (selectedFilterKey === 'tomorrow') {
+        defaultDate.setDate(now.getDate() + 1);
+      } 
+      const scheduledAtDate = new Date(defaultDate);
+      scheduledAtDate.setHours(8, 0, 0, 0);
+
+      setSelectedDeadline(new Date(defaultDate)); // chỉ ngày
+      setSelectedScheduledAt(scheduledAtDate);    // ngày + giờ
+      }
+
     setTaskModalVisible(true);
   };
 
@@ -218,9 +254,8 @@ export default function HomeScreen() {
         const updatePayload: Partial<Task> = {
           title: newTaskTitle,
           pomodoroDuration: durationMinutes,
-          scheduledTime: taskScheduledTime, // Save the "HH:mm" string
-          // If you use a DateTimePicker for scheduledTime, you'd save its timestamp here
-        };
+          scheduledTime: taskScheduledTime, 
+         };
         
         if (firebaseDueDate !== undefined) {
           updatePayload.dueDate = firebaseDueDate === null ? null : firebaseDueDate;
@@ -229,7 +264,7 @@ export default function HomeScreen() {
           updatePayload.scheduledAt = firebaseScheduledAt === null ? null : firebaseScheduledAt;
         }
 
-        await update(ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{editingTask.id}`), updatePayload); // <--- THAY ĐỔI
+        await update(ref(db, `users/${user.uid}/tasks/${editingTask.id}`), updatePayload);
         Alert.alert("Thành công", "Đã cập nhật công việc.");
       } else {
         const newTaskRef = push(ref(db, `users/${user.uid}/tasks`));
@@ -253,7 +288,6 @@ export default function HomeScreen() {
       }
 
       setTaskModalVisible(false);
-      // Reset states
       setNewTaskTitle('');
       setEditingTask(null);
       setTaskPomodoroDuration(DEFAULT_POMODORO_DURATION.toString());
@@ -272,9 +306,10 @@ export default function HomeScreen() {
   const toggleTaskCompletion = async (task: Task) => {
     if (!user) return;
     try {
-      await update(ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{task.id}`), { // <--- THAY ĐỔI
-        completed: !task.completed
+      await update(ref(db, `users/${user.uid}/tasks/${task.id}`), {
+      completed: !task.completed
       });
+
     } catch (error) {
       console.error("Lỗi cập nhật trạng thái công việc: ", error);
       Alert.alert("Lỗi", "Không thể cập nhật trạng thái công việc.");
@@ -294,11 +329,10 @@ export default function HomeScreen() {
           text: "Xóa",
           onPress: async () => {
             try {
-              await remove(ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{taskId}`)); // <--- THAY ĐỔI
+              await remove(ref(db, `users/${user.uid}/tasks/${taskId}`));
+
               Alert.alert("Thành công", "Đã xóa công việc.");
-              // Việc cập nhật danh sách allTasks và filteredTasks sẽ tự động xảy ra
-              // nhờ vào onValue listener của Firebase, hoặc bạn có thể gọi filterAndSortTasks()
-              // nếu muốn cập nhật ngay lập tức mà không chờ listener.
+            
             } catch (error) {
               console.error("Lỗi xóa công việc: ", error);
               Alert.alert("Lỗi", "Không thể xóa công việc.");

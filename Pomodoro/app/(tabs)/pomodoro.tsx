@@ -1,14 +1,15 @@
 // app/(tabs)/pomodoro.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ImageBackground, Alert } from 'react-native';
-import * as ReactNative from 'react-native'; // Sử dụng namespace import cho AppState
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
-import { db } from '../../firebaseConfig'; // Đảm bảo đường dẫn này đúng
-import { ref, update, increment } from 'firebase/database';
-import { styles } from './pomodoro.styles';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { increment, ref, update } from 'firebase/database';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import * as ReactNative from 'react-native'; // Sử dụng namespace import cho AppState
+import { Alert, ImageBackground, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { db } from '../../firebaseConfig';
+import { styles } from './pomodoro.styles';
+
 
 // Thời lượng mặc định (tính bằng giây)
 const POMODORO_MODE_DURATION_DEFAULT_SECONDS = 25 * 60;
@@ -155,14 +156,17 @@ export default function PomodoroScreen() {
       setPomodoroCount(newPomodoroCount);
 
       if (currentTaskId && user) {
-        const taskRefDb = ref(db, `users/<span class="math-inline">\{user\.uid\}/tasks/</span>{currentTaskId}`);
+        const taskRefDb = ref(db, `users/${user.uid}/tasks/${currentTaskId}`);
         try {
           // Cộng thời gian đã bỏ ra bằng thời lượng của phiên pomodoro VỪA KẾT THÚC
           const pomodoroJustCompletedDurationMinutes = getInitialTimeForMode('pomodoro') / 60; // Thời gian này là của phiên vừa xong
           await update(taskRefDb, {
-            timeSpent: increment(pomodoroJustCompletedDurationMinutes),
-            completedPomodoros: increment(1)
+          timeSpent: increment(pomodoroJustCompletedDurationMinutes),
+          completedPomodoros: increment(1),
+          completed: true,
+          categoryKey: 'completed', // Chuyển vào tab "Đã hoàn thành"
           });
+
         } catch (error) {
           console.error("Lỗi cập nhật công việc trên Firebase: ", error);
         }
