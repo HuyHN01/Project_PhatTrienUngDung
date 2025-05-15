@@ -1,7 +1,6 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { onAuthStateChanged, User, signOut as firebaseSignOut, Auth } from 'firebase/auth'; // Auth là kiểu của auth instance (nếu cần ép kiểu)
-import { User as FirebaseUser } from 'firebase/auth';
-import { auth as firebaseAuthServiceFromConfig } from '../firebaseConfig'; 
+import { signOut as firebaseSignOut, User as FirebaseUser, onAuthStateChanged, User } from 'firebase/auth';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { auth as firebaseAuthServiceFromConfig } from '../firebaseConfig';
 
 console.log("AuthContext: firebaseAuthServiceFromConfig imported:", !!firebaseAuthServiceFromConfig);
 if (firebaseAuthServiceFromConfig && typeof firebaseAuthServiceFromConfig.onAuthStateChanged !== 'function') {
@@ -26,23 +25,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     if (!firebaseAuthServiceFromConfig) {
-        console.error("AuthContext: firebaseAuthServiceFromConfig is undefined in useEffect!");
-        setLoading(false); // Dừng loading nếu auth service không có
-        return;
+      console.error("AuthContext: firebaseAuthServiceFromConfig is undefined in useEffect!");
+      setLoading(false);
+      return;
     }
+
     console.log("AuthContext: Setting up onAuthStateChanged listener...");
     const unsubscribe = onAuthStateChanged(firebaseAuthServiceFromConfig, (currentUser) => {
-        console.log("AuthContext: onAuthStateChanged triggered. User:", currentUser ? currentUser.uid : null);
-        setUser(currentUser as User | null);
-        setLoading(false);
+      console.log("AuthContext: onAuthStateChanged triggered. User:", currentUser ? currentUser.uid : null);
+      setUser(currentUser);
+      setLoading(false);
     });
+
     return () => {
-        console.log("AuthContext: Cleaning up onAuthStateChanged listener.");
-        unsubscribe();
+      console.log("AuthContext: Cleaning up onAuthStateChanged listener.");
+      unsubscribe();
     };
-}, []); 
+  }, []);
+
   const signOut = async () => {
     try {
       await firebaseSignOut(firebaseAuthServiceFromConfig);
