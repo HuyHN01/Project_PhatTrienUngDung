@@ -1,19 +1,19 @@
-// app/(tabs)/pomodoro.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { increment, ref, update } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import * as ReactNative from 'react-native'; // Sử dụng namespace import cho AppState
+import * as ReactNative from 'react-native';
 import { Alert, ImageBackground, Text, TouchableOpacity, View } from 'react-native';
+import { scheduleBreakReminder, schedulePomodoroNotifications } from '../../components/pomodoroNotifications';
+import { recordStats } from '../../components/statsHelpers';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebaseConfig';
 import { styles } from './pomodoro.styles';
 
 
-// Thời lượng mặc định (tính bằng giây)
 const POMODORO_MODE_DURATION_DEFAULT_SECONDS = 25 * 60;
-const SHORT_BREAK_DURATION_SECONDS = 5 * 60; // Đã là _SECONDS
+const SHORT_BREAK_DURATION_SECONDS = 5 * 60; 
 const LONG_BREAK_DURATION_SECONDS = 15 * 60;
 
 type TimerMode = 'pomodoro' | 'shortBreak' | 'longBreak';
@@ -158,7 +158,6 @@ export default function PomodoroScreen() {
       if (currentTaskId && user) {
         const taskRefDb = ref(db, `users/${user.uid}/tasks/${currentTaskId}`);
         try {
-          // Cộng thời gian đã bỏ ra bằng thời lượng của phiên pomodoro VỪA KẾT THÚC
           const pomodoroJustCompletedDurationMinutes = getInitialTimeForMode('pomodoro') / 60; // Thời gian này là của phiên vừa xong
           await update(taskRefDb, {
           timeSpent: increment(pomodoroJustCompletedDurationMinutes),
@@ -166,25 +165,22 @@ export default function PomodoroScreen() {
           completed: true,
           categoryKey: 'completed', // Chuyển vào tab "Đã hoàn thành"
           });
-
+            await recordStats(user.uid, pomodoroJustCompletedDurationMinutes);
         } catch (error) {
           console.error("Lỗi cập nhật công việc trên Firebase: ", error);
         }
       }
       nextMode = (newPomodoroCount % 4 === 0) ? 'longBreak' : 'shortBreak';
       nextDuration = getInitialTimeForMode(nextMode);
-    } else { // Kết thúc break
+    } else { 
       nextMode = 'pomodoro';
-      // nextDuration đã được đặt ở trên là getInitialTimeForMode('pomodoro')
-    }
-
+     }
     setMode(nextMode);
     setTimeLeft(nextDuration);
   }, [mode, pomodoroCount, currentTaskId, playSound, getInitialTimeForMode, db, user]);
 
   useEffect(() => {
     if (isActive && timeLeft > 0) {
-      // setInterval trả về một number trong React Native/môi trường trình duyệt
       intervalRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -217,7 +213,13 @@ export default function PomodoroScreen() {
     if (!isActive && (timeLeft === 0 || timeLeft === initialDurationForCurrentMode)) {
       setTimeLeft(initialDurationForCurrentMode);
     }
-    setIsActive(prev => !prev);
+    if (mode === 'pomodoro') {
+      schedulePomodoroNotifications(initialDurationForCurrentMode / 60); // chuyển giây về phút
+    } else {
+      const breakMins = initialDurationForCurrentMode / 60;
+      scheduleBreakReminder(breakMins);
+    }
+  setIsActive(prev => !prev);
   };
 
   const formatTime = (seconds: number) => {
