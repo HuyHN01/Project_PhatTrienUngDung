@@ -1,4 +1,4 @@
-import { StyleSheet, Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
   backgroundImage: {
@@ -300,11 +300,11 @@ export const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#121212'
   },
-//   bottomPomodoroText: { // Nếu muốn hiển thị số
-//     color: 'white',
-//     fontSize: 24,
-//     fontWeight: 'bold',
-//   },
+   bottomPomodoroText: { // Nếu muốn hiển thị số
+     color: 'white',
+   fontSize: 24,
+    fontWeight: 'bold',
+   },
   emptyStateContainer: {
       flex: 1,
       justifyContent: 'center',
@@ -355,5 +355,42 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FF3B30',
     textDecorationLine: 'underline',
-  }
+  },
+  container: {
+        flex: 1,
+        backgroundColor: '#121212',
+        paddingTop: Platform.OS === 'android' ? 25 : 50, // Thêm padding top
+        paddingHorizontal: 10,
+    },
+    centered: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#fff',
+        textAlign: 'center',
+        marginBottom: 5,
+    },
+    subHeaderTitle: {
+        fontSize: 16,
+        color: '#ccc',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    loadingText: {
+        marginTop: 10,
+        color: '#ccc',
+    },
+    errorText: {
+        color: 'red',
+        fontSize: 16,
+    },
+    infoText: {
+        color: '#aaa',
+        fontSize: 16,
+        textAlign: 'center',
+        marginTop: 20,
+    }
 });
