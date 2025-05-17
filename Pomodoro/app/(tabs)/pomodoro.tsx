@@ -5,7 +5,7 @@ import { increment, ref, update } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as ReactNative from 'react-native';
 import { Alert, ImageBackground, Text, TouchableOpacity, View } from 'react-native';
-import { scheduleBreakReminder, schedulePomodoroNotifications } from '../../components/pomodoroNotifications';
+//import { scheduleBreakReminder, schedulePomodoroNotifications } from '../../components/pomodoroNotifications';
 import { recordStats } from '../../components/statsHelpers';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebaseConfig';
@@ -214,10 +214,10 @@ export default function PomodoroScreen() {
       setTimeLeft(initialDurationForCurrentMode);
     }
     if (mode === 'pomodoro') {
-      schedulePomodoroNotifications(initialDurationForCurrentMode / 60); // chuyển giây về phút
+      //schedulePomodoroNotifications(initialDurationForCurrentMode / 60); // chuyển giây về phút
     } else {
       const breakMins = initialDurationForCurrentMode / 60;
-      scheduleBreakReminder(breakMins);
+      //scheduleBreakReminder(breakMins);
     }
   setIsActive(prev => !prev);
   };
@@ -246,7 +246,7 @@ export default function PomodoroScreen() {
     >
       <View style={styles.overlay}>
         <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('../(tabs)/index')}>
+          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}>
             <Ionicons name="chevron-back" size={32} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerText} numberOfLines={1} ellipsizeMode="tail">

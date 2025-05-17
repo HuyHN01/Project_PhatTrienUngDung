@@ -24,7 +24,7 @@ function RootLayoutNav() {
         router.replace('/(auth)/login');
       }} else {if (isInAuthGroup) {
         console.log('Redirecting to home (user found, was in auth group)');
-        router.replace('../(tabs)/index.tsx');
+        router.replace('/(tabs)');
       }}
       console.log('Hiding SplashScreen');
     SplashScreen.hideAsync();
