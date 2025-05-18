@@ -63,8 +63,8 @@ ios/Flutter/flutter_export_environment.sh
 .vscode/
 
 ### Firebase (nếu có) ###
-google-services.json
-GoogleService-Info.plist
+# google-services.json
+# GoogleService-Info.plist
 
 ### Các file tạm ###
 *.swp
