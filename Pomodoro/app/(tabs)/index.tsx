@@ -63,23 +63,19 @@ const formatDate = (timestamp?: number, includeTime: boolean = true): string => 
 export default function HomeScreen() {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const [pomodoroDuration, setPomodoroDuration] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
   const [taskPomodoroDuration, setTaskPomodoroDuration] = useState('');
   const [taskScheduledTime, setTaskScheduledTime] = useState('');
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
   const [selectedFilterKey, setSelectedFilterKey] = useState<Category['filterKey']>('today');
-
   const [isTaskModalVisible, setTaskModalVisible] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-
   const [isDeadlinePickerVisible, setDeadlinePickerVisibility] = useState(false);
-  const [customPomodoroDuration, setCustomPomodoroDuration] = useState(DEFAULT_POMODORO_DURATION.toString());
   const [selectedDeadline, setSelectedDeadline] = useState<Date | undefined>(undefined);
   const [selectedScheduledAt, setSelectedScheduledAt] = useState<Date | undefined>(undefined);
   const [isScheduledAtPickerVisible, setScheduledAtPickerVisibility] = useState(false);
+
   const handleLogout = async () => {
     await signOut();
   };
@@ -97,18 +93,16 @@ export default function HomeScreen() {
         const updates: Record<string, any> = {};
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
-
         loadedTasks.forEach(task => {
           if (!task.completed && (task.categoryKey === 'today' || task.categoryKey === 'tomorrow')) {
-            updates[`users/${user.uid}/tasks/${task.id}/categoryKey`] = 'planned';
+             if (!task.scheduledAt && !task.dueDate) {
+                updates[`users/${user.uid}/tasks/${task.id}/categoryKey`] = 'planned';
+             }
           }
         });
-
         if (Object.keys(updates).length > 0) {
           update(ref(db), updates);
         }
-
       });
       return () => unsubscribe();
     } else {
@@ -143,12 +137,10 @@ export default function HomeScreen() {
         const firstDayOfWeek = new Date(now);
         firstDayOfWeek.setDate(now.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
         const weekStart = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate()).getTime();
-
         const lastDayOfWeek = new Date(weekStart);
         lastDayOfWeek.setDate(new Date(weekStart).getDate() + 6);
         const weekEnd = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999).getTime();
         tempTasks = tempTasks.filter(task => task.scheduledAt && task.scheduledAt >= weekStart && task.scheduledAt <= weekEnd);
-
       } else if (selectedFilterKey === 'planned') {
           tempTasks = tempTasks.filter(task => (task.scheduledAt && task.scheduledAt > todayEnd) || (task.dueDate && task.dueDate > todayEnd));
       }
@@ -196,20 +188,16 @@ export default function HomeScreen() {
       setNewTaskTitle('');
       setTaskPomodoroDuration(DEFAULT_POMODORO_DURATION.toString());
       setTaskScheduledTime('');
-
       const now = new Date();
       let defaultDate = new Date(now);
-
       if (selectedFilterKey === 'tomorrow') {
         defaultDate.setDate(now.getDate() + 1);
       }
       const scheduledAtDate = new Date(defaultDate);
       scheduledAtDate.setHours(8, 0, 0, 0);
-
       setSelectedDeadline(new Date(defaultDate));
       setSelectedScheduledAt(scheduledAtDate);
       }
-
     setTaskModalVisible(true);
   };
 
@@ -227,12 +215,12 @@ export default function HomeScreen() {
 
    let firebaseDueDate: number | null | undefined = selectedDeadline ? selectedDeadline.getTime() : (editingTask ? editingTask.dueDate : undefined);
      if (editingTask && selectedDeadline === undefined && editingTask.dueDate !== undefined) {
-        firebaseDueDate = null; 
+        firebaseDueDate = null;
     }
 
   let firebaseScheduledAt: number | null | undefined = selectedScheduledAt ? selectedScheduledAt.getTime() : (editingTask ? editingTask.scheduledAt : undefined);
     if (editingTask && selectedScheduledAt === undefined && editingTask.scheduledAt !== undefined) {
-        firebaseScheduledAt = null; 
+        firebaseScheduledAt = null;
     }
 
   try {
@@ -240,14 +228,14 @@ export default function HomeScreen() {
         const updatePayload: Partial<Task> = {
           title: newTaskTitle,
           pomodoroDuration: durationMinutes,
-          scheduledTime: taskScheduledTime, 
+          scheduledTime: taskScheduledTime,
          };
-        
+
         if (firebaseDueDate !== undefined) {
-          updatePayload.dueDate = firebaseDueDate === null ? null : firebaseDueDate;
+          updatePayload.dueDate = firebaseDueDate;
         }
          if (firebaseScheduledAt !== undefined) {
-          updatePayload.scheduledAt = firebaseScheduledAt === null ? null : firebaseScheduledAt;
+          updatePayload.scheduledAt = firebaseScheduledAt;
         }
 
         await update(ref(db, `users/${user.uid}/tasks/${editingTask.id}`), updatePayload);
@@ -263,7 +251,7 @@ export default function HomeScreen() {
               : 'today',
           createdAt: Date.now(),
           dueDate: firebaseDueDate,
-          scheduledAt: firebaseScheduledAt, 
+          scheduledAt: firebaseScheduledAt,
           pomodoroDuration: durationMinutes,
           scheduledTime: taskScheduledTime,
           completedPomodoros: 0,
@@ -291,33 +279,42 @@ export default function HomeScreen() {
   const toggleTaskCompletion = async (task: Task) => {
     if (!user) return;
     try {
-      await update(ref(db, `users/${user.uid}/tasks/${task.id}`), {
-      completed: !task.completed
-      });
-
+      const newCompletedStatus = !task.completed;
+      const updates: Partial<Task> = { completed: newCompletedStatus };
+      if (newCompletedStatus) {
+        updates.categoryKey = 'completed';
+      } else {
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        if (task.scheduledAt && task.scheduledAt >= todayStart) {
+            updates.categoryKey = 'today';
+        } else if (task.dueDate && task.dueDate >= todayStart) {
+            updates.categoryKey = 'today';
+        }
+        else {
+            updates.categoryKey = 'planned';
+        }
+      }
+      await update(ref(db, `users/${user.uid}/tasks/${task.id}`), updates);
     } catch (error) {
       console.error("Lỗi cập nhật trạng thái công việc: ", error);
       Alert.alert("Lỗi", "Không thể cập nhật trạng thái công việc.");
     }
   };
+
   const handleDeleteTask = (taskId: string) => {
     if (!user) return;
     Alert.alert(
       "Xác nhận xóa",
       "Bạn có chắc chắn muốn xóa công việc này không?",
       [
-        {
-          text: "Hủy",
-          style: "cancel"
-        },
+        { text: "Hủy", style: "cancel" },
         {
           text: "Xóa",
           onPress: async () => {
             try {
               await remove(ref(db, `users/${user.uid}/tasks/${taskId}`));
-
               Alert.alert("Thành công", "Đã xóa công việc.");
-            
             } catch (error) {
               console.error("Lỗi xóa công việc: ", error);
               Alert.alert("Lỗi", "Không thể xóa công việc.");
@@ -328,6 +325,7 @@ export default function HomeScreen() {
       ]
     );
   };
+
   const renderCategoryItem = ({ item }: { item: Category }) => {
     let count = 0;
     const nowForCategory = new Date();
@@ -362,6 +360,14 @@ export default function HomeScreen() {
 
   const renderTaskItem = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
+      <TouchableOpacity style={styles.taskCheckButton} onPress={() => toggleTaskCompletion(item)}>
+        <Ionicons
+          name={item.completed ? "checkbox" : "square-outline"}
+          size={24}
+          color={item.completed ? "#32CD32" : "#ccc"}
+        />
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.taskTitleContainer} onPress={() => handleOpenModal(item)}>
         <Text style={[styles.taskCardTitle, item.completed && styles.completedTaskTitle]}>{item.title}</Text>
         {item.scheduledTime && (
@@ -370,9 +376,14 @@ export default function HomeScreen() {
           </Text>
         )}
         {item.scheduledAt && (
-          <Text style={[styles.scheduledAtText, { color: item.completed ? '#777' : '#FF8C00' }, item.completed && styles.completedTaskTitle]}>
+          <Text style={[newModalStyles.scheduledAtText, item.completed && styles.completedTaskTitle]}>
             <Ionicons name="time-outline" size={13} color={item.completed ? '#777' : '#FF8C00'} /> Bắt đầu: {formatDate(item.scheduledAt)}
           </Text>
+        )}
+        {item.dueDate && !item.scheduledAt && (
+            <Text style={[styles.dueDateText, item.completed && styles.completedTaskTitle]}>
+                <Ionicons name="calendar-outline" size={13} color={item.completed ? '#777' : '#FF3B30'} /> Deadline: {formatDate(item.dueDate, false)}
+            </Text>
         )}
         <Text style={styles.pomodoroInfoText}>
             Pomo: {item.pomodoroDuration || DEFAULT_POMODORO_DURATION} phút | HT: {item.completedPomodoros ?? 0}
@@ -387,7 +398,7 @@ export default function HomeScreen() {
             params: {
               taskId: item.id,
               taskTitle: item.title,
-             taskPomodoroDuration: (item.pomodoroDuration || DEFAULT_POMODORO_DURATION).toString()
+              taskPomodoroDuration: (item.pomodoroDuration || DEFAULT_POMODORO_DURATION).toString()
             }
           })}
         >
@@ -402,29 +413,26 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.screenContainer}>
-       <View style={styles.mainHeader}>
-            {user ? (
-              <>
-                <Text style={styles.authText}>Chào, {user.displayName || user.email}</Text>
-                <TouchableOpacity onPress={() => router.push('/profile/UserProfileScreen')} style={{ marginLeft: 10 }}>
-                  <Ionicons name="person-circle-outline" size={28} color="#FFD700" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleLogout} style={{ marginLeft: 10 }}>
-                  <Ionicons name="log-out-outline" size={28} color="#FF6F00" />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-                <Text style={styles.authText}>Đăng Nhập | Đăng ký</Text>
-              </TouchableOpacity>
-            )}
-
-            <View style={styles.headerActionIcons}>
-            <Ionicons name="notifications-outline" size={26} color="#fff" style={styles.actionIcon} />
-            <Ionicons name="leaf-outline" size={26} color="#fff" style={styles.actionIcon} />
-            <Ionicons name="trophy-outline" size={26} color="#fff" style={styles.actionIcon} />
-            </View>
-        </View>
+      <View style={styles.mainHeader}>
+        {user ? (
+          <>
+            <Text style={styles.authText}>Chào, {user.displayName || user.email}</Text>
+            <TouchableOpacity onPress={() => router.push('../profile')} style={homeScreenStyles.headerIcon}>
+              <Ionicons name="person-circle-outline" size={28} color="#FFD700" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('../settings')} style={homeScreenStyles.headerIcon}>
+              <Ionicons name="settings-outline" size={26} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleLogout} style={homeScreenStyles.headerIcon}>
+              <Ionicons name="log-out-outline" size={28} color="#FF6F00" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
+            <Text style={styles.authText}>Đăng Nhập | Đăng ký</Text>
+          </TouchableOpacity>
+        )}
+      </View>
         <View style={styles.searchContainer}>
             <TextInput style={styles.searchInputStyle} placeholder="🔍  Tìm kiếm công việc..." placeholderTextColor="#888" />
         </View>
@@ -457,81 +465,82 @@ export default function HomeScreen() {
             contentContainerStyle={{ paddingBottom: 150 }}
         />
       )}
-  <Modal
-      animationType="slide"
-      transparent={true}
-      visible={isTaskModalVisible}
-      onRequestClose={() => setTaskModalVisible(false)}
-    >
-      <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setTaskModalVisible(false)}>
-        <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.modalFormTitle}>
-            {editingTask ? "Sửa công việc" : "Thêm công việc mới"}
-          </Text>
 
-          <TextInput
-            style={styles.modalFormInput}
-            placeholder="Tên công việc..."
-            placeholderTextColor="#999"
-            value={newTaskTitle}
-            onChangeText={setNewTaskTitle}
-            autoFocus
-          />
-          <Text style={newModalStyles.modalLabel}>Thời lượng Pomodoro (phút):</Text>
-          <TextInput
-            style={styles.modalFormInput}
-            placeholder={`Mặc định: ${DEFAULT_POMODORO_DURATION} phút`}
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            value={taskPomodoroDuration} 
-            onChangeText={setTaskPomodoroDuration} 
-          />
-          <Text style={newModalStyles.modalLabel}>Thời gian thực hiện (HH:mm):</Text>
-          <TextInput
-            style={styles.modalFormInput}
-            placeholder="Ví dụ: 08:30 (để trống nếu không có)"
-            placeholderTextColor="#999"
-            value={taskScheduledTime} 
-            onChangeText={setTaskScheduledTime} 
-          />
-          <Text style={newModalStyles.modalLabel}>Deadline (Ngày hết hạn):</Text>
-          <TouchableOpacity onPress={showDeadlinePicker} style={newModalStyles.datePickerButton}>
-            <Ionicons name="calendar-outline" size={20} color="#FF6F00" style={{ marginRight: 10 }}/>
-            <Text style={newModalStyles.datePickerButtonText}>
-              {selectedDeadline ? formatDate(selectedDeadline.getTime(), false) : "Chọn ngày hết hạn"}
-            </Text>
-          </TouchableOpacity>
-          {selectedDeadline && (
-            <TouchableOpacity onPress={() => setSelectedDeadline(undefined)} style={newModalStyles.clearDateButton}>
-              <Text style={newModalStyles.clearDateButtonText}>Xóa Deadline</Text>
+      <Modal
+          animationType="slide"
+          transparent={true}
+          visible={isTaskModalVisible}
+          onRequestClose={() => setTaskModalVisible(false)}
+        >
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setTaskModalVisible(false)}>
+            <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.modalFormTitle}>
+                {editingTask ? "Sửa công việc" : "Thêm công việc mới"}
+              </Text>
+
+              <TextInput
+                style={styles.modalFormInput}
+                placeholder="Tên công việc..."
+                placeholderTextColor="#999"
+                value={newTaskTitle}
+                onChangeText={setNewTaskTitle}
+                autoFocus
+              />
+              <Text style={newModalStyles.modalLabel}>Thời lượng Pomodoro (phút):</Text>
+              <TextInput
+                style={styles.modalFormInput}
+                placeholder={`Mặc định: ${DEFAULT_POMODORO_DURATION} phút`}
+                placeholderTextColor="#999"
+                keyboardType="numeric"
+                value={taskPomodoroDuration}
+                onChangeText={setTaskPomodoroDuration}
+              />
+              <Text style={newModalStyles.modalLabel}>Thời gian thực hiện (HH:mm):</Text>
+              <TextInput
+                style={styles.modalFormInput}
+                placeholder="Ví dụ: 08:30 (để trống nếu không có)"
+                placeholderTextColor="#999"
+                value={taskScheduledTime}
+                onChangeText={setTaskScheduledTime}
+              />
+              <Text style={newModalStyles.modalLabel}>Deadline (Ngày hết hạn):</Text>
+              <TouchableOpacity onPress={showDeadlinePicker} style={newModalStyles.datePickerButton}>
+                <Ionicons name="calendar-outline" size={20} color="#FF6F00" style={{ marginRight: 10 }}/>
+                <Text style={newModalStyles.datePickerButtonText}>
+                  {selectedDeadline ? formatDate(selectedDeadline.getTime(), false) : "Chọn ngày hết hạn"}
+                </Text>
+              </TouchableOpacity>
+              {selectedDeadline && (
+                <TouchableOpacity onPress={() => setSelectedDeadline(undefined)} style={newModalStyles.clearDateButton}>
+                  <Text style={newModalStyles.clearDateButtonText}>Xóa Deadline</Text>
+                </TouchableOpacity>
+              )}
+
+              <Text style={newModalStyles.modalLabel}>Lên lịch bắt đầu (Ngày & Giờ):</Text>
+              <TouchableOpacity onPress={showScheduledAtPicker} style={newModalStyles.datePickerButton}>
+                 <Ionicons name="time-outline" size={20} color="#FF6F00" style={{ marginRight: 10 }}/>
+                <Text style={newModalStyles.datePickerButtonText}>
+                  {selectedScheduledAt ? formatDate(selectedScheduledAt.getTime(), true) : "Chọn ngày & giờ bắt đầu"}
+                </Text>
+              </TouchableOpacity>
+              {selectedScheduledAt && (
+                <TouchableOpacity onPress={() => setSelectedScheduledAt(undefined)} style={newModalStyles.clearDateButton}>
+                  <Text style={newModalStyles.clearDateButtonText}>Xóa Lịch</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.modalActionButtons}>
+                <Button title="Hủy" onPress={() => setTaskModalVisible(false)} color="#FF3B30" />
+                <View style={{ width: 20 }} />
+                <Button title={editingTask ? "Lưu" : "Thêm"} onPress={handleSaveTask} color="#FF6F00" />
+              </View>
             </TouchableOpacity>
-          )}
-
-          <Text style={newModalStyles.modalLabel}>Lên lịch bắt đầu (Ngày & Giờ):</Text>
-          <TouchableOpacity onPress={showScheduledAtPicker} style={newModalStyles.datePickerButton}>
-             <Ionicons name="time-outline" size={20} color="#FF6F00" style={{ marginRight: 10 }}/>
-            <Text style={newModalStyles.datePickerButtonText}>
-              {selectedScheduledAt ? formatDate(selectedScheduledAt.getTime(), true) : "Chọn ngày & giờ bắt đầu"}
-            </Text>
           </TouchableOpacity>
-          {selectedScheduledAt && (
-            <TouchableOpacity onPress={() => setSelectedScheduledAt(undefined)} style={newModalStyles.clearDateButton}>
-              <Text style={newModalStyles.clearDateButtonText}>Xóa Lịch</Text>
-            </TouchableOpacity>
-          )}
-
-          <View style={styles.modalActionButtons}>
-            <Button title="Hủy" onPress={() => setTaskModalVisible(false)} color="#FF3B30" />
-            <View style={{ width: 20 }} />
-            <Button title={editingTask ? "Lưu" : "Thêm"} onPress={handleSaveTask} color="#FF6F00" />
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
+        </Modal>
 
       <DateTimePickerModal
         isVisible={isDeadlinePickerVisible}
-        mode="date" 
+        mode="date"
         onConfirm={handleConfirmDeadline}
         onCancel={hideDeadlinePicker}
         date={selectedDeadline || new Date()}
@@ -541,7 +550,7 @@ export default function HomeScreen() {
       />
       <DateTimePickerModal
         isVisible={isScheduledAtPickerVisible}
-        mode="datetime" 
+        mode="datetime"
         onConfirm={handleConfirmScheduledAt}
         onCancel={hideScheduledAtPicker}
         date={selectedScheduledAt || new Date()}
@@ -561,6 +570,13 @@ export default function HomeScreen() {
     </View>
   );
 }
+
+const homeScreenStyles = StyleSheet.create({
+  headerIcon: {
+    marginLeft: 15,
+    padding: 5,
+  }
+});
 
 const newModalStyles = StyleSheet.create({
   modalLabel: {
