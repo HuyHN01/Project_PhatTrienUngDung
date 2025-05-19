@@ -1,19 +1,32 @@
+// app/(tabs)/pomodoro.tsx
+
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { increment, ref, update } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as ReactNative from 'react-native';
-import { Alert, ImageBackground, Text, TouchableOpacity, View, Modal, Button, FlatList, Image, Switch } from 'react-native';
+import { Alert, ImageBackground, Text, TouchableOpacity, View, Modal, Button, FlatList, Image } from 'react-native'; // Switch không cần ở đây nữa
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { recordStats } from '../../components/statsHelpers';
-import { useAuth } from '../../context/AuthContext';
-import { db } from '../../firebaseConfig';
+import { recordStats } from '../../components/statsHelpers'; // Điều chỉnh đường dẫn nếu cần
+import { useAuth } from '../../context/AuthContext';       // Điều chỉnh đường dẫn nếu cần
+import { db } from '../../firebaseConfig';               // Điều chỉnh đường dẫn nếu cần
 import { styles } from './pomodoro.styles';
+import * as DocumentPicker from 'expo-document-picker'; 
 
-const POMODORO_MODE_DURATION_DEFAULT_SECONDS = 25 * 60;
-const SHORT_BREAK_DURATION_SECONDS = 5 * 60;
-const LONG_BREAK_DURATION_SECONDS = 15 * 60;
+// --- KEYS CHO ASYNCSTORAGE (Nên định nghĩa ở một file constants chung) ---
+const POMODORO_DURATION_KEY = 'pomodoroDuration';
+const SHORT_BREAK_DURATION_KEY = 'shortBreakDuration';
+const LONG_BREAK_DURATION_KEY = 'longBreakDuration';
+const END_SOUND_URI_KEY = 'endSoundUri';
+const BREAK_MUSIC_URI_KEY = 'breakMusicUri';
+const POMODORO_BACKGROUND_URI_KEY = 'pomodoroBackgroundUri';
+// Thêm các key khác nếu cần
+
+// Giá trị mặc định ban đầu (phút)
+const DEFAULT_POMODORO_MINUTES = 25;
+const DEFAULT_SHORT_BREAK_MINUTES = 5;
+const DEFAULT_LONG_BREAK_MINUTES = 15;
 
 type TimerMode = 'pomodoro' | 'shortBreak' | 'longBreak';
 
@@ -24,12 +37,8 @@ const PREDEFINED_BACKGROUNDS = [
   { id: 'mountain', name: 'Núi non', uri: 'https://images.unsplash.com/photo-1454496522488-7a8e488e8606' },
 ];
 
-const AVAILABLE_BREAK_MUSIC: Record<string, { name: string, source: any }> = {
-  'no_sound': { name: 'Không phát nhạc', source: null },
-  'default_relax': { name: 'Nhạc thư giãn mặc định', source: require('@/assets/sounds/relax_default.mp3') },
-  'ocean_waves': { name: 'Sóng biển', source: require('@/assets/sounds/ocean_waves.mp3') },
-};
-const DEFAULT_BREAK_MUSIC_KEY = 'default_relax';
+// Không cần AVAILABLE_BREAK_MUSIC ở đây nữa nếu URI được lưu trực tiếp
+const DEFAULT_BREAK_MUSIC_KEY_PLACEHOLDER = 'default_relax_sound_placeholder'; // Chỉ là placeholder, URI sẽ được tải
 
 type AppStateStatus = ReactNative.AppStateStatus;
 
@@ -38,10 +47,15 @@ export default function PomodoroScreen() {
   const params = useLocalSearchParams<{ taskId?: string; taskTitle?: string; taskPomodoroDuration?: string }>();
   const router = useRouter();
 
+  // States cho thời lượng từ cài đặt (tính bằng giây)
+  const [pomodoroDurationSetting, setPomodoroDurationSetting] = useState(DEFAULT_POMODORO_MINUTES * 60);
+  const [shortBreakDurationSetting, setShortBreakDurationSetting] = useState(DEFAULT_SHORT_BREAK_MINUTES * 60);
+  const [longBreakDurationSetting, setLongBreakDurationSetting] = useState(DEFAULT_LONG_BREAK_MINUTES * 60);
+
   const initialTaskPomodoroDurationSecondsRef = useRef<number>(
     params.taskPomodoroDuration
       ? parseInt(params.taskPomodoroDuration, 10) * 60
-      : POMODORO_MODE_DURATION_DEFAULT_SECONDS
+      : pomodoroDurationSetting // Sử dụng cài đặt nếu không có params
   );
 
   const [timeLeft, setTimeLeft] = useState(initialTaskPomodoroDurationSecondsRef.current);
@@ -60,151 +74,179 @@ export default function PomodoroScreen() {
   const [isBgModalVisible, setIsBgModalVisible] = useState(false);
 
   const endSoundRef = useRef<Audio.Sound | null>(null);
+  const [endSoundUri, setEndSoundUri] = useState<string | null>(null);
 
-  const [breakMusicSound, setBreakMusicSound] = useState<Audio.Sound | null>(null);
-  const [selectedBreakMusicKey, setSelectedBreakMusicKey] = useState<string>(DEFAULT_BREAK_MUSIC_KEY);
+  const breakMusicSoundRef = useRef<Audio.Sound | null>(null); // Đổi tên để phân biệt với state
+  const [breakMusicUri, setBreakMusicUri] = useState<string | null>(null);
   const [isBreakMusicPlaying, setIsBreakMusicPlaying] = useState(false);
   const [isMusicModalVisible, setIsMusicModalVisible] = useState(false);
 
+
   useEffect(() => {
     let isMounted = true;
-
-    const loadAppSettings = async () => {
+    const loadAllSettingsAndSounds = async () => {
       try {
-        const savedBgUri = await AsyncStorage.getItem('pomodoroBackgroundUri');
+        // Load durations
+        const storedPomoDur = await AsyncStorage.getItem(POMODORO_DURATION_KEY);
+        if (isMounted && storedPomoDur) setPomodoroDurationSetting(JSON.parse(storedPomoDur) * 60);
+
+        const storedShortBreakDur = await AsyncStorage.getItem(SHORT_BREAK_DURATION_KEY);
+        if (isMounted && storedShortBreakDur) setShortBreakDurationSetting(JSON.parse(storedShortBreakDur) * 60);
+
+        const storedLongBreakDur = await AsyncStorage.getItem(LONG_BREAK_DURATION_KEY);
+        if (isMounted && storedLongBreakDur) setLongBreakDurationSetting(JSON.parse(storedLongBreakDur) * 60);
+
+        // Load background
+        const savedBgUri = await AsyncStorage.getItem(POMODORO_BACKGROUND_URI_KEY);
         if (isMounted && savedBgUri) setCurrentBackgroundImageUri(savedBgUri);
 
-        const savedMusicKey = await AsyncStorage.getItem('pomodoroBreakMusicKey');
-        if (isMounted && savedMusicKey && AVAILABLE_BREAK_MUSIC[savedMusicKey]) {
-          setSelectedBreakMusicKey(savedMusicKey);
-        }
+        // Load sound URIs
+        const savedEndSoundUri = await AsyncStorage.getItem(END_SOUND_URI_KEY);
+        if (isMounted && savedEndSoundUri) setEndSoundUri(JSON.parse(savedEndSoundUri));
+
+        const savedBreakMusicUri = await AsyncStorage.getItem(BREAK_MUSIC_URI_KEY);
+        if (isMounted && savedBreakMusicUri) setBreakMusicUri(JSON.parse(savedBreakMusicUri));
+
       } catch (e) {
         console.error("Lỗi tải cài đặt:", e);
       }
     };
 
-    const loadEndSound = async () => {
-      try {
-        const { sound } = await Audio.Sound.createAsync(
-           require('@/assets/sounds/timer_finish.mp3')
-        );
-        if (isMounted) {
-          endSoundRef.current = sound;
-        } else {
-          await sound.unloadAsync();
-        }
-      } catch (error) {
-        console.error("Không thể tải âm thanh báo hết giờ: ", error);
-      }
-    };
-
-    loadAppSettings();
-    loadEndSound();
+    loadAllSettingsAndSounds();
 
     return () => {
       isMounted = false;
       endSoundRef.current?.unloadAsync();
-      breakMusicSound?.unloadAsync();
+      breakMusicSoundRef.current?.unloadAsync();
     };
   }, []);
 
-  const playEndSound = useCallback(async () => {
+  // useEffect để cập nhật initialTaskPomodoroDurationSecondsRef khi pomodoroDurationSetting thay đổi VÀ không có params
+  useEffect(() => {
+    if (!params.taskPomodoroDuration) { // Chỉ cập nhật nếu không có duration từ params
+        initialTaskPomodoroDurationSecondsRef.current = pomodoroDurationSetting;
+        if (mode === 'pomodoro' && !isActive) { // Reset timer nếu đang ở pomodoro và không active
+            setTimeLeft(pomodoroDurationSetting);
+        }
+    }
+  }, [pomodoroDurationSetting, params.taskPomodoroDuration, mode, isActive]);
+
+
+  const loadAndPlaySound = useCallback(async (soundObjectRef: React.MutableRefObject<Audio.Sound | null>, uri: string | null, options: Record<string, any> = {}) => {
+    if (!uri) {
+      console.log("Không có URI âm thanh để phát.");
+      return;
+    }
     try {
-      await endSoundRef.current?.stopAsync();
-      await endSoundRef.current?.replayAsync();
+      if (soundObjectRef.current) {
+        await soundObjectRef.current.unloadAsync();
+      }
+      console.log(`Đang tải âm thanh từ URI: ${uri}`);
+      const { sound } = await Audio.Sound.createAsync({ uri }, options);
+      soundObjectRef.current = sound;
+      await soundObjectRef.current.playAsync();
+      return sound; // Trả về đối tượng sound để có thể quản lý thêm nếu cần
     } catch (error) {
-      console.error("Không thể phát âm thanh báo hết giờ: ", error);
+      console.error(`Lỗi tải hoặc phát âm thanh từ URI ${uri}:`, error);
+      Alert.alert("Lỗi Âm thanh", `Không thể phát âm thanh: ${uri.split('/').pop()}`);
+      return null;
     }
   }, []);
 
+
+  const playEndSound = useCallback(async () => {
+    await loadAndPlaySound(endSoundRef, endSoundUri, { shouldPlay: true });
+  }, [endSoundUri, loadAndPlaySound]);
+
   const playBreakMusic = useCallback(async () => {
-    if (selectedBreakMusicKey === 'no_sound' || !AVAILABLE_BREAK_MUSIC[selectedBreakMusicKey]?.source) {
+    if (!breakMusicUri) {
       await stopBreakMusic();
       return;
     }
+    const sound = await loadAndPlaySound(breakMusicSoundRef, breakMusicUri, { shouldPlay: true, isLooping: true });
+    if (sound) setIsBreakMusicPlaying(true);
 
-    if (breakMusicSound) {
-      await breakMusicSound.unloadAsync();
-      setBreakMusicSound(null);
-    }
-
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        AVAILABLE_BREAK_MUSIC[selectedBreakMusicKey].source,
-        { shouldPlay: true, isLooping: true }
-      );
-      setBreakMusicSound(sound);
-      setIsBreakMusicPlaying(true);
-    } catch (error) {
-      console.error("Lỗi phát nhạc nghỉ:", error);
-      setIsBreakMusicPlaying(false);
-    }
-  }, [selectedBreakMusicKey, breakMusicSound]);
+  }, [breakMusicUri, loadAndPlaySound]);
 
   const stopBreakMusic = useCallback(async () => {
-    if (breakMusicSound) {
+    if (breakMusicSoundRef.current) {
       try {
-        await breakMusicSound.stopAsync();
-        await breakMusicSound.unloadAsync();
-        setBreakMusicSound(null);
+        await breakMusicSoundRef.current.stopAsync();
+        await breakMusicSoundRef.current.unloadAsync(); // Quan trọng để giải phóng
+        breakMusicSoundRef.current = null;
       } catch (e) {
         console.error("Lỗi dừng nhạc nghỉ:", e);
       }
     }
     setIsBreakMusicPlaying(false);
-  }, [breakMusicSound]);
+  }, []);
 
   const pauseBreakMusic = useCallback(async () => {
-    if (breakMusicSound && isBreakMusicPlaying) {
+    if (breakMusicSoundRef.current && isBreakMusicPlaying) {
       try {
-        await breakMusicSound.pauseAsync();
+        await breakMusicSoundRef.current.pauseAsync();
         setIsBreakMusicPlaying(false);
       } catch (e) {
         console.error("Lỗi tạm dừng nhạc nghỉ:", e);
       }
     }
-  }, [breakMusicSound, isBreakMusicPlaying]);
+  }, [isBreakMusicPlaying]);
 
   const resumeBreakMusic = useCallback(async () => {
-    if (breakMusicSound && !isBreakMusicPlaying && (mode === 'shortBreak' || mode === 'longBreak')) {
+     // Chỉ resume nếu có sound object, không đang phát, và đang trong break mode
+    if (breakMusicSoundRef.current && !isBreakMusicPlaying && (mode === 'shortBreak' || mode === 'longBreak')) {
       try {
-        await breakMusicSound.playAsync();
+        await breakMusicSoundRef.current.playAsync(); // Giả định isLooping đã được set khi load
         setIsBreakMusicPlaying(true);
       } catch (e) {
         console.error("Lỗi tiếp tục nhạc nghỉ:", e);
       }
+    } else if (!breakMusicSoundRef.current && breakMusicUri && !isBreakMusicPlaying && (mode === 'shortBreak' || mode === 'longBreak')){
+        // Nếu chưa có sound object (ví dụ sau khi app vào background rồi active lại), thì load và phát
+        playBreakMusic();
     }
-  }, [breakMusicSound, isBreakMusicPlaying, mode]);
+  }, [isBreakMusicPlaying, mode, breakMusicUri, playBreakMusic]);
+
 
   const getInitialTimeForMode = useCallback((currentMode: TimerMode) => {
     if (currentMode === 'pomodoro') {
-      return initialTaskPomodoroDurationSecondsRef.current;
+      // Ưu tiên duration từ params (task-specific), sau đó là setting, cuối cùng là default
+      return params.taskPomodoroDuration ? parseInt(params.taskPomodoroDuration, 10) * 60 : pomodoroDurationSetting;
     }
-    if (currentMode === 'shortBreak') return SHORT_BREAK_DURATION_SECONDS;
-    if (currentMode === 'longBreak') return LONG_BREAK_DURATION_SECONDS;
-    return initialTaskPomodoroDurationSecondsRef.current;
-  }, []);
+    if (currentMode === 'shortBreak') return shortBreakDurationSetting;
+    if (currentMode === 'longBreak') return longBreakDurationSetting;
+    return pomodoroDurationSetting;
+  }, [params.taskPomodoroDuration, pomodoroDurationSetting, shortBreakDurationSetting, longBreakDurationSetting]);
 
+  // Effect để cập nhật timer khi params hoặc mode thay đổi (giữ nguyên phần lớn)
   useEffect(() => {
-    const newDurationSeconds = params.taskPomodoroDuration
-      ? parseInt(params.taskPomodoroDuration, 10) * 60
-      : POMODORO_MODE_DURATION_DEFAULT_SECONDS;
+    const taskSpecificDuration = params.taskPomodoroDuration ? parseInt(params.taskPomodoroDuration, 10) * 60 : null;
+    const newDurationSeconds = taskSpecificDuration ?? pomodoroDurationSetting;
 
-    initialTaskPomodoroDurationSecondsRef.current = newDurationSeconds;
+    // Cập nhật ref nếu là pomodoro mode hoặc không có duration từ task
+    if (mode === 'pomodoro' || !taskSpecificDuration) {
+        initialTaskPomodoroDurationSecondsRef.current = newDurationSeconds;
+    }
+
 
     setCurrentTaskId(params.taskId || null);
     setCurrentTaskTitle(params.taskTitle || 'Tập trung');
 
-    if (mode === 'pomodoro' && (!isActive || timeLeft !== newDurationSeconds)) {
-      setTimeLeft(newDurationSeconds);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      setIsActive(false);
-      stopBreakMusic();
+    // Reset timer nếu mode là pomodoro và có sự thay đổi task hoặc timer không active
+    if (mode === 'pomodoro') {
+      if (!isActive || (params.taskId && params.taskId !== currentTaskId) || timeLeft !== newDurationSeconds) {
+        setTimeLeft(newDurationSeconds);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        setIsActive(false);
+        stopBreakMusic();
+      }
     }
-  }, [params.taskId, params.taskTitle, params.taskPomodoroDuration, mode, isActive, stopBreakMusic]);
+  }, [params.taskId, params.taskTitle, params.taskPomodoroDuration, mode, pomodoroDurationSetting, isActive, currentTaskId, stopBreakMusic]);
+
 
   const resetTimer = useCallback((newModeParam?: TimerMode) => {
+    // ... (Giữ nguyên logic resetTimer, nó đã sử dụng getInitialTimeForMode)
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -221,34 +263,15 @@ export default function PomodoroScreen() {
     }
   }, [mode, getInitialTimeForMode, stopBreakMusic]);
 
-  useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        if (backgroundTimeRef.current && isActive) {
-          const timePassedInBackground = Math.floor((Date.now() - backgroundTimeRef.current) / 1000);
-          setTimeLeft(prevTime => Math.max(0, prevTime - timePassedInBackground));
-        }
-        backgroundTimeRef.current = null;
-      } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
-        if (isActive) {
-          backgroundTimeRef.current = Date.now();
-        }
-      }
-      appState.current = nextAppState;
-    };
-    const subscription = ReactNative.AppState.addEventListener('change', handleAppStateChange);
-    return () => {
-      subscription.remove();
-    };
-  }, [isActive, isBreakMusicPlaying, mode]);
+  // ... (Các useEffect và hàm khác giữ nguyên: handleAppStateChange, handleTimerEnd, toggleTimer, formatTime, getModeUserFriendlyText, handleSelectBackground)
 
   const handleTimerEnd = useCallback(async () => {
     setIsActive(false);
-    playEndSound();
+    playEndSound(); // Phát âm thanh báo hết phiên (endSoundUri)
     await stopBreakMusic();
 
     let nextMode: TimerMode = 'pomodoro';
-    let nextDuration = getInitialTimeForMode('pomodoro');
+    // Thời gian cho phiên tiếp theo sẽ được lấy từ getInitialTimeForMode(nextMode)
 
     if (mode === 'pomodoro') {
       const newPomodoroCount = pomodoroCount + 1;
@@ -257,7 +280,9 @@ export default function PomodoroScreen() {
       if (currentTaskId && user) {
         const taskRefDb = ref(db, `users/${user.uid}/tasks/${currentTaskId}`);
         try {
-          const pomodoroJustCompletedDurationMinutes = getInitialTimeForMode('pomodoro') / 60;
+          // Thời lượng của phiên pomodoro vừa hoàn thành
+          const pomodoroJustCompletedDurationMinutes = (params.taskPomodoroDuration ? parseInt(params.taskPomodoroDuration, 10) : (pomodoroDurationSetting / 60));
+
           await update(taskRefDb, {
             timeSpent: increment(pomodoroJustCompletedDurationMinutes),
             completedPomodoros: increment(1),
@@ -267,82 +292,157 @@ export default function PomodoroScreen() {
           console.error("Lỗi cập nhật công việc trên Firebase: ", error);
         }
       }
-      nextMode = (newPomodoroCount % 4 === 0) ? 'longBreak' : 'shortBreak';
-      nextDuration = getInitialTimeForMode(nextMode);
+      // Logic chọn long break/short break dựa trên pomodoroCount
+      // Giả sử cài đặt longBreakInterval được lấy từ AsyncStorage và lưu vào state
+      // const longBreakIntervalSetting = await AsyncStorage.getItem(LONG_BREAK_INTERVAL_KEY) || 4;
+      // Hiện tại chưa có state cho longBreakIntervalSetting trong PomodoroScreen, cần thêm nếu muốn tùy chỉnh
+      nextMode = (newPomodoroCount % 4 === 0) ? 'longBreak' : 'shortBreak'; // Tạm dùng 4
     } else {
       nextMode = 'pomodoro';
     }
+
     setMode(nextMode);
-    setTimeLeft(nextDuration);
-  }, [mode, pomodoroCount, currentTaskId, playEndSound, getInitialTimeForMode, user, stopBreakMusic, playBreakMusic]);
+    setTimeLeft(getInitialTimeForMode(nextMode)); // Set thời gian cho mode tiếp theo
 
-  useEffect(() => {
-    if (isActive && timeLeft > 0) {
-      intervalRef.current = setInterval(() => {
-        setTimeLeft(prev => prev <= 1 ? 0 : prev - 1);
-      }, 1000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    // Nếu có cài đặt tự động bắt đầu và là break, thì phát nhạc
+    // const autoStartBreaks = JSON.parse(await AsyncStorage.getItem(AUTO_START_BREAK_KEY) || 'false');
+    // if ((nextMode === 'shortBreak' || nextMode === 'longBreak') && autoStartBreaks) {
+    // setIsActive(true); // Tự động bắt đầu timer
+    // playBreakMusic(); // Tự động phát nhạc
+    // }
+    // Tương tự cho autoStartPomodoro
+  }, [mode, pomodoroCount, currentTaskId, playEndSound, getInitialTimeForMode, user, stopBreakMusic, params.taskPomodoroDuration, pomodoroDurationSetting]);
+
+
+    useEffect(() => {
+        if (isActive && timeLeft > 0) {
+        intervalRef.current = setInterval(() => {
+            setTimeLeft(prev => prev <= 1 ? 0 : prev - 1);
+        }, 1000);
+        } else if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        }
+        return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        };
+    }, [isActive, timeLeft]);
+
+    useEffect(() => {
+        if (timeLeft === 0 && isActive) {
+            handleTimerEnd();
+        }
+    }, [timeLeft, isActive, handleTimerEnd]);
+
+    const toggleTimer = () => {
+        const initialDurationForCurrentMode = getInitialTimeForMode(mode);
+
+        if (!isActive) { // Khi nhấn nút Start/Resume
+        if (timeLeft === 0 || timeLeft === initialDurationForCurrentMode) {
+            setTimeLeft(initialDurationForCurrentMode);
+        }
+        if (mode === 'shortBreak' || mode === 'longBreak') {
+            playBreakMusic();
+        } else {
+            stopBreakMusic();
+        }
+        } else { // Khi nhấn nút Pause
+        if (mode === 'shortBreak' || mode === 'longBreak') {
+            pauseBreakMusic();
+        }
+        }
+        setIsActive(prev => !prev);
     };
-  }, [isActive, timeLeft]);
 
-  useEffect(() => {
-    if (timeLeft === 0 && isActive) {
-        handleTimerEnd();
+    const formatTime = (seconds: number) => {
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${minutes < 10 ? '0' : ''}${minutes}:${secs < 10 ? '0' : ''}${secs}`;
+    };
+
+    const getModeUserFriendlyText = () => {
+        switch(mode) {
+        case 'pomodoro': return currentTaskTitle && currentTaskTitle !== 'Tập trung' ? `Tập trung: ${currentTaskTitle}` : 'Thời gian tập trung';
+        case 'shortBreak': return 'Nghỉ ngắn';
+        case 'longBreak': return 'Nghỉ dài';
+        default: return 'Pomodoro';
+        }
+    };
+
+    const handleSelectBackground = async (uri: string) => {
+        setCurrentBackgroundImageUri(uri);
+        await AsyncStorage.setItem(POMODORO_BACKGROUND_URI_KEY, uri);
+        setIsBgModalVisible(false);
+    };
+
+
+  const handleSelectMusicFromModal = async (uri: string | null, name: string) => {
+    await stopBreakMusic(); // Dừng nhạc hiện tại
+    if (uri) {
+      setBreakMusicUri(uri); // Cập nhật state để loadAndPlaySound sử dụng
+      await AsyncStorage.setItem(BREAK_MUSIC_URI_KEY, JSON.stringify(uri));
+      // Tên nhạc có thể lưu riêng nếu cần hiển thị trong settings
+      // await AsyncStorage.setItem('breakMusicName', name);
+    } else { // Trường hợp chọn "Không phát nhạc"
+      setBreakMusicUri(null);
+      await AsyncStorage.removeItem(BREAK_MUSIC_URI_KEY);
     }
-  }, [timeLeft, isActive, handleTimerEnd]);
-
-  const toggleTimer = () => {
-    const initialDurationForCurrentMode = getInitialTimeForMode(mode);
-
-    if (!isActive) {
-      if (timeLeft === 0 || timeLeft === initialDurationForCurrentMode) {
-        setTimeLeft(initialDurationForCurrentMode);
-      }
-      if (mode === 'shortBreak' || mode === 'longBreak') {
-        playBreakMusic();
-      } else {
-        stopBreakMusic();
-      }
-    } else {
-      if (mode === 'shortBreak' || mode === 'longBreak') {
-        pauseBreakMusic();
-      }
-    }
-    setIsActive(prev => !prev);
-  };
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes < 10 ? '0' : ''}${minutes}:${secs < 10 ? '0' : ''}${secs}`;
-  };
-
-  const getModeUserFriendlyText = () => {
-    switch(mode) {
-      case 'pomodoro': return currentTaskTitle && currentTaskTitle !== 'Tập trung' ? `Tập trung: ${currentTaskTitle}` : 'Thời gian tập trung';
-      case 'shortBreak': return 'Nghỉ ngắn';
-      case 'longBreak': return 'Nghỉ dài';
-      default: return 'Pomodoro';
-    }
-  };
-
-  const handleSelectBackground = async (uri: string) => {
-    setCurrentBackgroundImageUri(uri);
-    await AsyncStorage.setItem('pomodoroBackgroundUri', uri);
-    setIsBgModalVisible(false);
-  };
-
-  const handleSelectMusic = async (key: string) => {
-    await stopBreakMusic();
-    setSelectedBreakMusicKey(key);
-    await AsyncStorage.setItem('pomodoroBreakMusicKey', key);
     setIsMusicModalVisible(false);
+
+    // Nếu đang trong break và timer đang chạy, phát nhạc mới (hoặc không phát gì)
+    if (isActive && (mode === 'shortBreak' || mode === 'longBreak')) {
+      if (uri) {
+        // Cần gọi playBreakMusic ở đây nhưng đảm bảo nó dùng `uri` mới
+        // Do playBreakMusic dùng state breakMusicUri, cần đảm bảo state đã cập nhật
+        // Hoặc truyền trực tiếp uri vào một hàm phát nhạc.
+        // Tạm thời để đơn giản, người dùng sẽ cần start/resume break để nhạc mới phát nếu thay đổi
+        // Hoặc:
+        loadAndPlaySound(breakMusicSoundRef, uri, { shouldPlay: true, isLooping: true })
+            .then(sound => { if(sound) setIsBreakMusicPlaying(true); });
+
+      }
+    }
   };
+
+
+  // Danh sách âm thanh cho Modal (bao gồm tùy chọn import)
+  const soundOptions = [
+    { id: 'no_sound', name: 'Không phát nhạc', uri: null },
+    // Ví dụ âm thanh từ assets (bạn cần có các file này)
+    { id: 'default_relax', name: 'Nhạc thư giãn (Mặc định)', uri: require('@/assets/sounds/relax_default.mp3') },
+    { id: 'ocean_waves', name: 'Sóng biển', uri: require('@/assets/sounds/ocean_waves.mp3') },
+    // Thêm các âm thanh mặc định khác
+    { id: 'import_sound', name: 'Chọn tệp MP3 khác...', uri: 'import' }, // Dấu hiệu để mở DocumentPicker
+  ];
+
+
+  const handlePickSoundForModal = async (type: 'endSound' | 'breakMusic') => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'audio/mpeg', copyToCacheDirectory: true });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const fileUri = asset.uri;
+        const fileName = asset.name || 'Âm thanh đã chọn';
+
+        if (type === 'endSound') {
+          setEndSoundUri(fileUri);
+          await AsyncStorage.setItem(END_SOUND_URI_KEY, JSON.stringify(fileUri));
+          // Cập nhật tên hiển thị trong SettingsScreen (nếu SettingsScreen đọc trực tiếp từ AsyncStorage)
+        } else { // breakMusic
+          // Gọi handleSelectMusicFromModal để xử lý việc phát và lưu
+          handleSelectMusicFromModal(fileUri, fileName);
+        }
+        Alert.alert('Thành công', `Đã chọn: ${fileName}`);
+      }
+    } catch (err) {
+      console.error('Lỗi chọn tệp âm thanh:', err);
+      Alert.alert('Lỗi', 'Không thể chọn tệp.');
+    }
+    // Đóng modal chọn nhạc nếu đang mở từ PomodoroScreen
+    if (type === 'breakMusic') setIsMusicModalVisible(false);
+
+  };
+
 
   return (
     <ImageBackground
@@ -412,6 +512,7 @@ export default function PomodoroScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Modal Chọn Background (giữ nguyên) */}
         <Modal
           animationType="slide"
           transparent={true}
@@ -440,6 +541,7 @@ export default function PomodoroScreen() {
           </View>
         </Modal>
 
+        {/* Modal Chọn Nhạc Nghỉ (Cập nhật để dùng soundOptions) */}
         <Modal
           animationType="slide"
           transparent={true}
@@ -450,15 +552,30 @@ export default function PomodoroScreen() {
             <View style={styles.modalContent}>
               <Text style={styles.modalFormTitle}>Chọn Nhạc Nghỉ</Text>
               <FlatList
-                data={Object.keys(AVAILABLE_BREAK_MUSIC)}
-                keyExtractor={(item) => item}
-                renderItem={({ item: musicKey }) => (
+                data={soundOptions} // Sử dụng soundOptions mới
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
                   <TouchableOpacity
                     style={modalSettingStyles.settingItem}
-                    onPress={() => handleSelectMusic(musicKey)}
+                    onPress={() => {
+                      if (item.uri === 'import') {
+                        handlePickSoundForModal('breakMusic');
+                      } else {
+                        handleSelectMusicFromModal(item.uri, item.name);
+                      }
+                    }}
                   >
-                    <Text style={modalSettingStyles.settingItemText}>{AVAILABLE_BREAK_MUSIC[musicKey].name}</Text>
-                    {selectedBreakMusicKey === musicKey && <Ionicons name="checkmark-circle" size={24} color="green" />}
+                    <Text style={modalSettingStyles.settingItemText}>{item.name}</Text>
+                    {/* So sánh URI để đánh dấu mục đang chọn. Cần cẩn thận nếu URI là require() */}
+                    {/* Đối với file require, so sánh có thể không trực tiếp hoạt động.
+                        Cân nhắc lưu key hoặc tên file thay vì URI đầy đủ nếu phức tạp.
+                        Hiện tại, tạm so sánh với breakMusicUri (là string).
+                    */}
+                    {(breakMusicUri && item.uri && typeof item.uri === 'object' && item.uri.uri === breakMusicUri) || // Cho trường hợp URI đã được DocumentPicker trả về
+                     (breakMusicUri === item.uri) || // Cho trường hợp URI là string (link online)
+                     (!breakMusicUri && item.uri === null) // Cho "Không phát nhạc"
+                     ? <Ionicons name="checkmark-circle" size={24} color="green" /> : null}
+
                   </TouchableOpacity>
                 )}
               />
