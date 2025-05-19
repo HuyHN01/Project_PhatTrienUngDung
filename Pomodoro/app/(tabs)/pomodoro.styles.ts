@@ -392,5 +392,8 @@ export const styles = StyleSheet.create({
         fontSize: 16,
         textAlign: 'center',
         marginTop: 20,
-    }
+    },
+    disabledButton: {
+    backgroundColor: '#ccc', // Màu xám khi nút bị vô hiệu hóa
+  }
 });
