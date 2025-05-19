@@ -417,7 +417,7 @@ export default function HomeScreen() {
         {user ? (
           <>
             <Text style={styles.authText}>Chào, {user.displayName || user.email}</Text>
-            <TouchableOpacity onPress={() => router.push('../profile')} style={homeScreenStyles.headerIcon}>
+            <TouchableOpacity onPress={() => router.push('/profile/UserProfileScreen')} style={homeScreenStyles.headerIcon}>
               <Ionicons name="person-circle-outline" size={28} color="#FFD700" />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('../settings')} style={homeScreenStyles.headerIcon}>
