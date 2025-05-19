@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "77480527326",
+    "firebase_url": "https://hlc-de97c-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "hlc-de97c",
+    "storage_bucket": "hlc-de97c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:77480527326:android:59fb6c465fb935b7a0c94f",
+        "android_client_info": {
+          "package_name": "com.hlc.pomodoro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQwwRtZtSI_KHS1avnBCtOrKf_xDw4gHc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
