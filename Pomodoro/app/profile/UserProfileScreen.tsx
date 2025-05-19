@@ -43,7 +43,7 @@ export default function ProfileScreen() {
         });
 
         return () => {
-            // Detach the listener when the component unmounts
+
             userRef && listener();
         };
     }, [user]);
