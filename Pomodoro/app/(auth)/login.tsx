@@ -24,18 +24,18 @@ export default function LoginScreen() {
         console.log(`Đang tìm email cho username: ${enteredUsername}`);
         const usersNodeRef = realtimeDB.ref('users');
         const query = usersNodeRef.orderByChild('username').equalTo(enteredUsername);
-        const snapshot = await query.once('value'); // Thực thi query trực tiếp trên đối tượng query
+        const snapshot = await query.once('value');
 
         if (snapshot.exists()) {
           const usersData = snapshot.val();
-         const userId = Object.keys(usersData)[0];
+          const userId = Object.keys(usersData)[0];
           if (usersData[userId] && usersData[userId].email) {
             emailToLogin = usersData[userId].email;
             console.log(`Đã tìm thấy email: ${emailToLogin} cho username: ${enteredUsername}`);
           } else {
-             Alert.alert('Lỗi dữ liệu', 'Không tìm thấy thông tin email liên kết với tên đăng nhập này.');
-             setLoading(false);
-             return;
+            Alert.alert('Lỗi dữ liệu', 'Không tìm thấy thông tin email liên kết với tên đăng nhập này.');
+            setLoading(false);
+            return;
           }
         } else {
           Alert.alert('Lỗi đăng nhập', 'Tên đăng nhập không tồn tại.');
@@ -46,7 +46,7 @@ export default function LoginScreen() {
 
       console.log(`Đang thử đăng nhập với email: ${emailToLogin}`);
       await firebaseAuthServiceFromConfig.signInWithEmailAndPassword(emailToLogin, password);
-      router.replace('../index'); // Chuyển hướng đến trang chính sau khi đăng nhập thành công
+      router.replace('/(tabs)');
     } catch (error: any) {
       console.error("Lỗi đăng nhập LOGIN_SCREEN: ", error);
       let errorMessage = "Đã có lỗi xảy ra khi đăng nhập. Vui lòng thử lại.";
@@ -75,6 +75,10 @@ export default function LoginScreen() {
     }
   };
 
+  const navigateToForgotPassword = () => {
+    router.push('/(auth)/forgot-password');
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Đăng Nhập</Text>
@@ -97,6 +101,11 @@ export default function LoginScreen() {
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? 'Đang xử lý...' : 'Đăng Nhập'}</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity onPress={navigateToForgotPassword}>
+        <Text style={styles.linkText}>Quên mật khẩu?</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
         <Text style={styles.linkText}>Chưa có tài khoản? Đăng ký</Text>
       </TouchableOpacity>
