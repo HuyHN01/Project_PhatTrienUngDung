@@ -1,6 +1,6 @@
 import { Slot, SplashScreen, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
-import { AuthProvider, useAuth } from '../context/AuthContext'; // Đảm bảo đường dẫn này đúng
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import '../firebaseConfig';
 
 SplashScreen.preventAutoHideAsync();
@@ -12,30 +12,39 @@ function RootLayoutNav() {
 
   useEffect(() => {
     if (loading) {
-      console.log('Auth loading...');
-      return; 
-    } const isInAuthGroup = segments.length > 0 && segments[0] === '(auth)';
+      return;
+    }
 
-    console.log('Auth state loaded. User:', user ? user.uid : 'null', 'Segments:', segments, 'InAuthGroup:', isInAuthGroup);
+    const currentRoute = segments.join('/');
+    const isInAuthGroup = segments.length > 0 && segments[0] === '(auth)';
+
+    let navigationHandled = false;
 
     if (!user) {
       if (!isInAuthGroup) {
-        console.log('Redirecting to login (user not found, not in auth group)');
         router.replace('/(auth)/login');
-      }} else {if (isInAuthGroup) {
-        console.log('Redirecting to home (user found, was in auth group)');
-        router.replace('/(tabs)');
-      }}
-      console.log('Hiding SplashScreen');
-    SplashScreen.hideAsync();
+        navigationHandled = true;
+      }
+    } else {
+      if (isInAuthGroup) {
+        if (currentRoute !== '(auth)/change-password') {
+          router.replace('/(tabs)');
+          navigationHandled = true;
+        }
+      }
+    }
+
+    if (navigationHandled || !loading) {
+        SplashScreen.hideAsync();
+    }
 
   }, [user, loading, segments, router]);
 
   if (loading) {
-    return null; 
+    return null;
   }
 
-  return <Slot />; 
+  return <Slot />;
 }
 
 export default function RootLayout() {
