@@ -4,32 +4,43 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { increment, ref, update } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as ReactNative from 'react-native';
-import { Alert, ImageBackground, Text, TouchableOpacity, View } from 'react-native';
-//import { scheduleBreakReminder, schedulePomodoroNotifications } from '../../components/pomodoroNotifications';
+import { Alert, ImageBackground, Text, TouchableOpacity, View, Modal, Button, FlatList, Image, Switch } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { recordStats } from '../../components/statsHelpers';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebaseConfig';
 import { styles } from './pomodoro.styles';
 
-
 const POMODORO_MODE_DURATION_DEFAULT_SECONDS = 25 * 60;
-const SHORT_BREAK_DURATION_SECONDS = 5 * 60; 
+const SHORT_BREAK_DURATION_SECONDS = 5 * 60;
 const LONG_BREAK_DURATION_SECONDS = 15 * 60;
 
 type TimerMode = 'pomodoro' | 'shortBreak' | 'longBreak';
 
-const backgroundImageUri = 'https://images.unsplash.com/photo-1472552944129-b035e9ea3744';
+const DEFAULT_BACKGROUND_IMAGE_URI = 'https://images.unsplash.com/photo-1472552944129-b035e9ea3744';
+const PREDEFINED_BACKGROUNDS = [
+  { id: 'default', name: 'Mặc định', uri: DEFAULT_BACKGROUND_IMAGE_URI },
+  { id: 'forest', name: 'Rừng cây', uri: 'https://images.unsplash.com/photo-1425913397330-cf8af2ff40a1' },
+  { id: 'mountain', name: 'Núi non', uri: 'https://images.unsplash.com/photo-1454496522488-7a8e488e8606' },
+];
+
+const AVAILABLE_BREAK_MUSIC: Record<string, { name: string, source: any }> = {
+  'no_sound': { name: 'Không phát nhạc', source: null },
+  'default_relax': { name: 'Nhạc thư giãn mặc định', source: require('@/assets/sounds/relax_default.mp3') },
+  'ocean_waves': { name: 'Sóng biển', source: require('@/assets/sounds/ocean_waves.mp3') },
+};
+const DEFAULT_BREAK_MUSIC_KEY = 'default_relax';
 
 type AppStateStatus = ReactNative.AppStateStatus;
 
 export default function PomodoroScreen() {
   const { user } = useAuth();
-  const params = useLocalSearchParams<{ taskId?: string; taskTitle?: string; taskPomodoroDuration?: string }>(); // <--- THÊM taskPomodoroDuration
+  const params = useLocalSearchParams<{ taskId?: string; taskTitle?: string; taskPomodoroDuration?: string }>();
   const router = useRouter();
 
   const initialTaskPomodoroDurationSecondsRef = useRef<number>(
     params.taskPomodoroDuration
-      ? parseInt(params.taskPomodoroDuration, 10) * 60 // Chuyển phút sang giây
+      ? parseInt(params.taskPomodoroDuration, 10) * 60
       : POMODORO_MODE_DURATION_DEFAULT_SECONDS
   );
 
@@ -41,87 +52,174 @@ export default function PomodoroScreen() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [currentTaskTitle, setCurrentTaskTitle] = useState<string | null>('Tập trung');
 
-  // Đổi kiểu của intervalRef thành number | null
   const intervalRef = useRef<number | null>(null);
   const appState = useRef(ReactNative.AppState.currentState);
   const backgroundTimeRef = useRef<number | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
 
-  // --- Tải và giải phóng âm thanh ---
+  const [currentBackgroundImageUri, setCurrentBackgroundImageUri] = useState<string>(DEFAULT_BACKGROUND_IMAGE_URI);
+  const [isBgModalVisible, setIsBgModalVisible] = useState(false);
+
+  const endSoundRef = useRef<Audio.Sound | null>(null);
+
+  const [breakMusicSound, setBreakMusicSound] = useState<Audio.Sound | null>(null);
+  const [selectedBreakMusicKey, setSelectedBreakMusicKey] = useState<string>(DEFAULT_BREAK_MUSIC_KEY);
+  const [isBreakMusicPlaying, setIsBreakMusicPlaying] = useState(false);
+  const [isMusicModalVisible, setIsMusicModalVisible] = useState(false);
+
   useEffect(() => {
     let isMounted = true;
-    const loadSound = async () => {
+
+    const loadAppSettings = async () => {
+      try {
+        const savedBgUri = await AsyncStorage.getItem('pomodoroBackgroundUri');
+        if (isMounted && savedBgUri) setCurrentBackgroundImageUri(savedBgUri);
+
+        const savedMusicKey = await AsyncStorage.getItem('pomodoroBreakMusicKey');
+        if (isMounted && savedMusicKey && AVAILABLE_BREAK_MUSIC[savedMusicKey]) {
+          setSelectedBreakMusicKey(savedMusicKey);
+        }
+      } catch (e) {
+        console.error("Lỗi tải cài đặt:", e);
+      }
+    };
+
+    const loadEndSound = async () => {
       try {
         const { sound } = await Audio.Sound.createAsync(
            require('@/assets/sounds/timer_finish.mp3')
         );
         if (isMounted) {
-          soundRef.current = sound;
+          endSoundRef.current = sound;
         } else {
           await sound.unloadAsync();
         }
       } catch (error) {
-        console.error("Không thể tải âm thanh: ", error);
-        Alert.alert("Lỗi âm thanh", "Không thể tải tệp âm thanh cho thông báo.");
+        console.error("Không thể tải âm thanh báo hết giờ: ", error);
       }
     };
-    loadSound();
+
+    loadAppSettings();
+    loadEndSound();
+
     return () => {
       isMounted = false;
-      soundRef.current?.unloadAsync();
+      endSoundRef.current?.unloadAsync();
+      breakMusicSound?.unloadAsync();
     };
   }, []);
 
-  const playSound = useCallback(async () => {
+  const playEndSound = useCallback(async () => {
     try {
-      await soundRef.current?.stopAsync();
-      await soundRef.current?.replayAsync();
+      await endSoundRef.current?.stopAsync();
+      await endSoundRef.current?.replayAsync();
     } catch (error) {
-      console.error("Không thể phát âm thanh: ", error);
+      console.error("Không thể phát âm thanh báo hết giờ: ", error);
     }
   }, []);
 
+  const playBreakMusic = useCallback(async () => {
+    if (selectedBreakMusicKey === 'no_sound' || !AVAILABLE_BREAK_MUSIC[selectedBreakMusicKey]?.source) {
+      await stopBreakMusic();
+      return;
+    }
+
+    if (breakMusicSound) {
+      await breakMusicSound.unloadAsync();
+      setBreakMusicSound(null);
+    }
+
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        AVAILABLE_BREAK_MUSIC[selectedBreakMusicKey].source,
+        { shouldPlay: true, isLooping: true }
+      );
+      setBreakMusicSound(sound);
+      setIsBreakMusicPlaying(true);
+    } catch (error) {
+      console.error("Lỗi phát nhạc nghỉ:", error);
+      setIsBreakMusicPlaying(false);
+    }
+  }, [selectedBreakMusicKey, breakMusicSound]);
+
+  const stopBreakMusic = useCallback(async () => {
+    if (breakMusicSound) {
+      try {
+        await breakMusicSound.stopAsync();
+        await breakMusicSound.unloadAsync();
+        setBreakMusicSound(null);
+      } catch (e) {
+        console.error("Lỗi dừng nhạc nghỉ:", e);
+      }
+    }
+    setIsBreakMusicPlaying(false);
+  }, [breakMusicSound]);
+
+  const pauseBreakMusic = useCallback(async () => {
+    if (breakMusicSound && isBreakMusicPlaying) {
+      try {
+        await breakMusicSound.pauseAsync();
+        setIsBreakMusicPlaying(false);
+      } catch (e) {
+        console.error("Lỗi tạm dừng nhạc nghỉ:", e);
+      }
+    }
+  }, [breakMusicSound, isBreakMusicPlaying]);
+
+  const resumeBreakMusic = useCallback(async () => {
+    if (breakMusicSound && !isBreakMusicPlaying && (mode === 'shortBreak' || mode === 'longBreak')) {
+      try {
+        await breakMusicSound.playAsync();
+        setIsBreakMusicPlaying(true);
+      } catch (e) {
+        console.error("Lỗi tiếp tục nhạc nghỉ:", e);
+      }
+    }
+  }, [breakMusicSound, isBreakMusicPlaying, mode]);
+
   const getInitialTimeForMode = useCallback((currentMode: TimerMode) => {
-  if (currentMode === 'pomodoro') {
-    return initialTaskPomodoroDurationSecondsRef.current; // Lấy từ ref
-  }
-  if (currentMode === 'shortBreak') return SHORT_BREAK_DURATION_SECONDS; // Đảm bảo hằng số này cũng là giây
-  if (currentMode === 'longBreak') return LONG_BREAK_DURATION_SECONDS; // Đảm bảo hằng số này cũng là giây
-  return initialTaskPomodoroDurationSecondsRef.current;
-}, []);
+    if (currentMode === 'pomodoro') {
+      return initialTaskPomodoroDurationSecondsRef.current;
+    }
+    if (currentMode === 'shortBreak') return SHORT_BREAK_DURATION_SECONDS;
+    if (currentMode === 'longBreak') return LONG_BREAK_DURATION_SECONDS;
+    return initialTaskPomodoroDurationSecondsRef.current;
+  }, []);
 
   useEffect(() => {
     const newDurationSeconds = params.taskPomodoroDuration
       ? parseInt(params.taskPomodoroDuration, 10) * 60
       : POMODORO_MODE_DURATION_DEFAULT_SECONDS;
 
-    initialTaskPomodoroDurationSecondsRef.current = newDurationSeconds; // Cập nhật ref
+    initialTaskPomodoroDurationSecondsRef.current = newDurationSeconds;
 
     setCurrentTaskId(params.taskId || null);
     setCurrentTaskTitle(params.taskTitle || 'Tập trung');
 
-    // Chỉ reset timeLeft nếu đang ở chế độ pomodoro và timer không active hoặc đã thay đổi duration
     if (mode === 'pomodoro' && (!isActive || timeLeft !== newDurationSeconds)) {
       setTimeLeft(newDurationSeconds);
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = null;
-      setIsActive(false); // Đảm bảo timer dừng khi chuyển task
+      setIsActive(false);
+      stopBreakMusic();
     }
-  }, [params.taskId, params.taskTitle, params.taskPomodoroDuration]);
-
+  }, [params.taskId, params.taskTitle, params.taskPomodoroDuration, mode, isActive, stopBreakMusic]);
 
   const resetTimer = useCallback((newModeParam?: TimerMode) => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    setIsActive(false); // Luôn dừng timer khi reset
+    setIsActive(false);
 
-    const targetMode = newModeParam || mode; // Nếu không truyền mode mới, giữ mode hiện tại
+    const targetMode = newModeParam || mode;
+    const previousMode = mode;
     setMode(targetMode);
-    setTimeLeft(getInitialTimeForMode(targetMode)); // QUAN TRỌNG: Đặt thời gian dựa trên mode mới
-  }, [mode, getInitialTimeForMode]);
+    setTimeLeft(getInitialTimeForMode(targetMode));
 
+    if (targetMode === 'pomodoro' && (previousMode === 'shortBreak' || previousMode === 'longBreak')) {
+      stopBreakMusic();
+    }
+  }, [mode, getInitialTimeForMode, stopBreakMusic]);
 
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
@@ -142,14 +240,15 @@ export default function PomodoroScreen() {
     return () => {
       subscription.remove();
     };
-  }, [isActive]);
+  }, [isActive, isBreakMusicPlaying, mode]);
 
   const handleTimerEnd = useCallback(async () => {
     setIsActive(false);
-    playSound();
+    playEndSound();
+    await stopBreakMusic();
 
     let nextMode: TimerMode = 'pomodoro';
-    let nextDuration = getInitialTimeForMode('pomodoro'); // Lấy thời lượng cho pomodoro tiếp theo
+    let nextDuration = getInitialTimeForMode('pomodoro');
 
     if (mode === 'pomodoro') {
       const newPomodoroCount = pomodoroCount + 1;
@@ -158,51 +257,40 @@ export default function PomodoroScreen() {
       if (currentTaskId && user) {
         const taskRefDb = ref(db, `users/${user.uid}/tasks/${currentTaskId}`);
         try {
-          const pomodoroJustCompletedDurationMinutes = getInitialTimeForMode('pomodoro') / 60; // Thời gian này là của phiên vừa xong
+          const pomodoroJustCompletedDurationMinutes = getInitialTimeForMode('pomodoro') / 60;
           await update(taskRefDb, {
-          timeSpent: increment(pomodoroJustCompletedDurationMinutes),
-          completedPomodoros: increment(1),
-          completed: true,
-          categoryKey: 'completed', // Chuyển vào tab "Đã hoàn thành"
+            timeSpent: increment(pomodoroJustCompletedDurationMinutes),
+            completedPomodoros: increment(1),
           });
-            await recordStats(user.uid, pomodoroJustCompletedDurationMinutes);
+          await recordStats(user.uid, pomodoroJustCompletedDurationMinutes);
         } catch (error) {
           console.error("Lỗi cập nhật công việc trên Firebase: ", error);
         }
       }
       nextMode = (newPomodoroCount % 4 === 0) ? 'longBreak' : 'shortBreak';
       nextDuration = getInitialTimeForMode(nextMode);
-    } else { 
+    } else {
       nextMode = 'pomodoro';
-     }
+    }
     setMode(nextMode);
     setTimeLeft(nextDuration);
-  }, [mode, pomodoroCount, currentTaskId, playSound, getInitialTimeForMode, db, user]);
+  }, [mode, pomodoroCount, currentTaskId, playEndSound, getInitialTimeForMode, user, stopBreakMusic, playBreakMusic]);
 
   useEffect(() => {
     if (isActive && timeLeft > 0) {
       intervalRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            return 0;
-          }
-          return prev - 1;
-        });
+        setTimeLeft(prev => prev <= 1 ? 0 : prev - 1);
       }, 1000);
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [isActive, timeLeft]);
 
- useEffect(() => {
+  useEffect(() => {
     if (timeLeft === 0 && isActive) {
         handleTimerEnd();
     }
@@ -210,16 +298,22 @@ export default function PomodoroScreen() {
 
   const toggleTimer = () => {
     const initialDurationForCurrentMode = getInitialTimeForMode(mode);
-    if (!isActive && (timeLeft === 0 || timeLeft === initialDurationForCurrentMode)) {
-      setTimeLeft(initialDurationForCurrentMode);
-    }
-    if (mode === 'pomodoro') {
-      //schedulePomodoroNotifications(initialDurationForCurrentMode / 60); // chuyển giây về phút
+
+    if (!isActive) {
+      if (timeLeft === 0 || timeLeft === initialDurationForCurrentMode) {
+        setTimeLeft(initialDurationForCurrentMode);
+      }
+      if (mode === 'shortBreak' || mode === 'longBreak') {
+        playBreakMusic();
+      } else {
+        stopBreakMusic();
+      }
     } else {
-      const breakMins = initialDurationForCurrentMode / 60;
-      //scheduleBreakReminder(breakMins);
+      if (mode === 'shortBreak' || mode === 'longBreak') {
+        pauseBreakMusic();
+      }
     }
-  setIsActive(prev => !prev);
+    setIsActive(prev => !prev);
   };
 
   const formatTime = (seconds: number) => {
@@ -237,10 +331,22 @@ export default function PomodoroScreen() {
     }
   };
 
-  // --- JSX ---
+  const handleSelectBackground = async (uri: string) => {
+    setCurrentBackgroundImageUri(uri);
+    await AsyncStorage.setItem('pomodoroBackgroundUri', uri);
+    setIsBgModalVisible(false);
+  };
+
+  const handleSelectMusic = async (key: string) => {
+    await stopBreakMusic();
+    setSelectedBreakMusicKey(key);
+    await AsyncStorage.setItem('pomodoroBreakMusicKey', key);
+    setIsMusicModalVisible(false);
+  };
+
   return (
     <ImageBackground
-      source={{ uri: backgroundImageUri }}
+      source={currentBackgroundImageUri ? { uri: currentBackgroundImageUri } : require('@/assets/images/default_pomodoro_bg.jpg')}
       style={styles.backgroundImage}
       resizeMode="cover"
     >
@@ -285,24 +391,104 @@ export default function PomodoroScreen() {
         </View>
 
         <View style={styles.bottomActionToolbar}>
-          <TouchableOpacity style={styles.toolbarActionButton}>
-            <Ionicons name="shield-checkmark-outline" size={24} color="white" />
-            <Text style={styles.toolbarActionText}>Nghiêm ngặt</Text>
+          <TouchableOpacity style={styles.toolbarActionButton} onPress={() => setIsBgModalVisible(true)}>
+            <Ionicons name="image-outline" size={24} color="white" />
+            <Text style={styles.toolbarActionText}>Nền</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.toolbarActionButton}>
-            <Ionicons name="hourglass-outline" size={24} color="white" />
-            <Text style={styles.toolbarActionText}>Hẹn giờ</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.toolbarActionButton}>
-            <Ionicons name="scan-outline" size={24} color="white" />
-            <Text style={styles.toolbarActionText}>Toàn màn hình</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.toolbarActionButton}>
+          <TouchableOpacity style={styles.toolbarActionButton} onPress={() => setIsMusicModalVisible(true)}>
             <Ionicons name="musical-notes-outline" size={24} color="white" />
-            <Text style={styles.toolbarActionText}>Tiếng động</Text>
+            <Text style={styles.toolbarActionText}>Nhạc nghỉ</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolbarActionButton} onPress={() => {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            handleTimerEnd();
+          }}>
+            <Ionicons name="play-skip-forward-outline" size={24} color="white" />
+            <Text style={styles.toolbarActionText}>Bỏ qua</Text>
+          </TouchableOpacity>
+           <TouchableOpacity style={styles.toolbarActionButton} onPress={() => router.push('/(tabs)')}>
+            <Ionicons name="list-outline" size={24} color="white" />
+            <Text style={styles.toolbarActionText}>Công việc</Text>
           </TouchableOpacity>
         </View>
+
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={isBgModalVisible}
+          onRequestClose={() => setIsBgModalVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalFormTitle}>Chọn Hình Nền</Text>
+              <FlatList
+                data={PREDEFINED_BACKGROUNDS}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={modalSettingStyles.settingItem}
+                    onPress={() => handleSelectBackground(item.uri)}
+                  >
+                    <Image source={{ uri: item.uri }} style={modalSettingStyles.settingImagePreview} />
+                    <Text style={modalSettingStyles.settingItemText}>{item.name}</Text>
+                    {currentBackgroundImageUri === item.uri && <Ionicons name="checkmark-circle" size={24} color="green" />}
+                  </TouchableOpacity>
+                )}
+              />
+              <Button title="Đóng" onPress={() => setIsBgModalVisible(false)} color="#FF6F00" />
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={isMusicModalVisible}
+          onRequestClose={() => setIsMusicModalVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalFormTitle}>Chọn Nhạc Nghỉ</Text>
+              <FlatList
+                data={Object.keys(AVAILABLE_BREAK_MUSIC)}
+                keyExtractor={(item) => item}
+                renderItem={({ item: musicKey }) => (
+                  <TouchableOpacity
+                    style={modalSettingStyles.settingItem}
+                    onPress={() => handleSelectMusic(musicKey)}
+                  >
+                    <Text style={modalSettingStyles.settingItemText}>{AVAILABLE_BREAK_MUSIC[musicKey].name}</Text>
+                    {selectedBreakMusicKey === musicKey && <Ionicons name="checkmark-circle" size={24} color="green" />}
+                  </TouchableOpacity>
+                )}
+              />
+              <Button title="Đóng" onPress={() => setIsMusicModalVisible(false)} color="#FF6F00"/>
+            </View>
+          </View>
+        </Modal>
+
       </View>
     </ImageBackground>
   );
 }
+
+const modalSettingStyles = ReactNative.StyleSheet.create({
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#3a3a3a',
+  },
+  settingItemText: {
+    color: 'white',
+    fontSize: 16,
+    flex: 1,
+  },
+  settingImagePreview: {
+    width: 50,
+    height: 50,
+    borderRadius: 5,
+    marginRight: 15,
+  },
+});
