@@ -1,19 +1,13 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
-import { auth as firebaseAuthServiceFromConfig } from '../../firebaseConfig'; // Import auth service
-// Giả sử bạn đã di chuyển auth.styles.ts ra ngoài thư mục app/(auth)
-// và cập nhật đường dẫn import tương ứng, ví dụ:
-// import { styles } from '../../styles/auth.styles'; 
-// Nếu chưa, hãy sử dụng đường dẫn cũ:
+import { auth as firebaseAuthServiceFromConfig } from '../../firebaseConfig';
 import { styles } from './auth.styles';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  // Không cần state `message` riêng nữa nếu Alert là đủ và sẽ điều hướng ngay
-  // const [message, setMessage] = useState('');
 
   const handlePasswordReset = async () => {
     if (email.trim() === '') {
@@ -21,8 +15,7 @@ export default function ForgotPasswordScreen() {
       return;
     }
     setLoading(true);
-    // setMessage(''); // Không cần thiết nếu điều hướng
-    try {
+  try {
       await firebaseAuthServiceFromConfig.sendPasswordResetEmail(email.trim());
       Alert.alert(
         'Thành công',
@@ -30,14 +23,11 @@ export default function ForgotPasswordScreen() {
         [
           {
             text: 'OK',
-            onPress: () => router.replace('/(auth)/login'), // Quay lại trang login sau khi nhấn OK
+            onPress: () => router.replace('/(auth)/login'), 
           },
         ]
       );
-      // Nếu bạn muốn tự động quay lại sau một khoảng thời gian mà không cần người dùng nhấn OK:
-      // setTimeout(() => {
-      //   router.replace('/(auth)/login');
-      // }, 3000); // Quay lại sau 3 giây
+      
     } catch (error: any) {
       console.error("Lỗi gửi email đặt lại mật khẩu: ", error);
       let errorMessage = "Đã có lỗi xảy ra. Vui lòng thử lại.";
@@ -74,8 +64,6 @@ export default function ForgotPasswordScreen() {
         keyboardType="email-address"
         autoCapitalize="none"
       />
-      {/* Không cần hiển thị message ở đây nữa nếu dùng Alert để điều hướng */}
-      {/* {message ? <Text style={{ color: '#4CAF50', textAlign: 'center', marginBottom: 15, fontSize: 14 }}>{message}</Text> : null} */}
       <TouchableOpacity style={styles.button} onPress={handlePasswordReset} disabled={loading}>
         {loading ? (
           <ActivityIndicator color="#fff" />

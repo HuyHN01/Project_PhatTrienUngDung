@@ -1,4 +1,3 @@
-// app/settings/pomodoro-interface.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -22,7 +21,6 @@ const PREDEFINED_BACKGROUNDS = [
   { id: 'desert', name: 'Sa mạc', uri: 'https://images.unsplash.com/photo-1473580044384-7ba9967e16a0' },
   { id: 'dark_lake', name: 'Hồ đêm', uri: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470' },
   { id: 'autumn_forest', name: 'Rừng thu', uri: 'https://images.unsplash.com/photo-1475924156734-496f6cac6ec1' },
-  // Thêm các ảnh bạn muốn
 ];
 
 export default function PomodoroInterfaceScreen() {
@@ -48,7 +46,6 @@ export default function PomodoroInterfaceScreen() {
       await AsyncStorage.setItem('pomodoroBackgroundUri', uri);
       setSelectedBackgroundUri(uri);
       Alert.alert('Thành công', 'Đã cập nhật hình nền Pomodoro.');
-      // Có thể thêm router.back() nếu muốn tự động quay lại sau khi chọn
     } catch (e) {
       Alert.alert('Lỗi', 'Không thể lưu lựa chọn hình nền.');
     }
@@ -61,7 +58,6 @@ export default function PomodoroInterfaceScreen() {
     >
       <ImageBackground source={{ uri: item.uri }} style={styles.imageBackground} imageStyle={styles.imageStyle}>
         <View style={styles.itemOverlay}>
-          {/* Ví dụ hiển thị timer giả */}
           <View style={styles.mockTimerCircle}>
             <Text style={styles.mockTimerText}>20:23</Text>
           </View>
@@ -73,7 +69,6 @@ export default function PomodoroInterfaceScreen() {
           </View>
         )}
       </ImageBackground>
-      {/* <Text style={styles.itemName}>{item.name}</Text> // Tên ảnh nếu cần */}
     </TouchableOpacity>
   );
 
@@ -83,7 +78,7 @@ export default function PomodoroInterfaceScreen() {
         data={PREDEFINED_BACKGROUNDS}
         renderItem={renderBackgroundItem}
         keyExtractor={(item) => item.id}
-        numColumns={2} // Hiển thị 2 cột
+        numColumns={2}
         contentContainerStyle={styles.listContentContainer}
       />
     </View>
@@ -103,12 +98,12 @@ const styles = StyleSheet.create({
     margin: 8,
     borderRadius: 12,
     overflow: 'hidden',
-    aspectRatio: 0.6, // Tỉ lệ cho item (chiều rộng / chiều cao)
+    aspectRatio: 0.6,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   selectedItem: {
-    borderColor: '#FF6F00', // Màu viền khi được chọn
+    borderColor: '#FF6F00',
   },
   imageBackground: {
     flex: 1,
@@ -116,9 +111,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   imageStyle: {
-    borderRadius: 10, // Bo góc cho ảnh nền bên trong
+    borderRadius: 10,
   },
-  itemOverlay: { // Để mô phỏng giao diện trong ảnh
+  itemOverlay: {
     flex: 1,
     width: '100%',
     backgroundColor: 'rgba(0,0,0,0.15)',
@@ -129,7 +124,7 @@ const styles = StyleSheet.create({
   mockTimerCircle: {
     width: '80%',
     aspectRatio: 1,
-    borderRadius: 100, // Lớn để đảm bảo tròn
+    borderRadius: 100,
     borderWidth: 5,
     borderColor: 'rgba(255,255,255,0.7)',
     justifyContent: 'center',
@@ -138,7 +133,7 @@ const styles = StyleSheet.create({
   },
   mockTimerText: {
     color: 'white',
-    fontSize: 28, // Điều chỉnh cho phù hợp
+    fontSize: 28,
     fontWeight: 'bold',
     opacity: 0.8,
   },

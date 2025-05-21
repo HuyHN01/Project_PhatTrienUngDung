@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { useRouter } from 'expo-router'; // ← thêm dòng này
+import { useRouter } from 'expo-router'; 
 
 export default function RelaxGameScreen() {
   const progress = useRef(new Animated.Value(0)).current;
@@ -8,7 +8,7 @@ export default function RelaxGameScreen() {
   const [score, setScore] = useState<number | null>(null);
   const [targetStart, setTargetStart] = useState(0.4);
   const [targetEnd, setTargetEnd] = useState(0.6);
-  const router = useRouter(); // ← khởi tạo router
+  const router = useRouter(); 
 
   const startGame = () => {
     setScore(null);
@@ -71,8 +71,6 @@ export default function RelaxGameScreen() {
       <TouchableOpacity style={styles.button} onPress={isRunning ? stopGame : startGame}>
         <Text style={styles.buttonText}>{isRunning ? 'Dừng lại' : 'Bắt đầu'}</Text>
       </TouchableOpacity>
-
-      {/* Nút quay lại menu */}
       <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/explore')}>
         <Text style={styles.backButtonText}>⬅️ Quay lại menu</Text>
       </TouchableOpacity>

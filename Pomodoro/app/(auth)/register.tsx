@@ -1,12 +1,8 @@
-// Pomodoro/app/(auth)/register.tsx
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
-// Import auth và db (Realtime Database instance) từ firebaseConfig
 import { auth as firebaseAuthServiceFromConfig, db as realtimeDB } from '../../firebaseConfig';
 import { styles } from './auth.styles';
-// Import các hàm của Realtime Database nếu bạn muốn dùng SDK v9 modular (nhưng hiện tại đang dùng v8 compat)
-// import { ref, set } from 'firebase/database';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -38,7 +34,7 @@ export default function RegisterScreen() {
       if (user) {
         const userData = {
           uid: user.uid,
-          username: username.trim().toLowerCase(), // Lưu username ở dạng chữ thường
+          username: username.trim().toLowerCase(), 
           email: email.trim(),
           createdAt: Date.now(),
         };

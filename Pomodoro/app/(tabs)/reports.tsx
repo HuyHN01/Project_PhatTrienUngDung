@@ -1,22 +1,19 @@
-
 import dayjs from 'dayjs';
 import { onValue, ref } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, ScrollView, Text, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
-import { useAuth } from '../../context/AuthContext'; // Đường dẫn tới AuthContext
-import { db } from '../../firebaseConfig'; // Đường dẫn tới firebaseConfig
+import { useAuth } from '../../context/AuthContext';
+import { db } from '../../firebaseConfig'; 
 import { styles } from './pomodoro.styles';
 
-
 interface PomodoroSession {
-
   durationMinutes: number;
   completedAt: number;
 }
 
 interface ChartDayData {
-  date: string; // YYYY-MM-DD
+  date: string; 
   minutes: number;
 }
 
@@ -35,11 +32,10 @@ export default function ReportScreen() {
     const fetchWeeklyStats = async () => {
       setLoading(true);
       setError(null);
-      const endDate = dayjs(); // Hôm nay
-      const startDate = endDate.subtract(6, 'day'); // 7 ngày trước (tính cả hôm nay)
+      const endDate = dayjs(); 
+      const startDate = endDate.subtract(6, 'day');
       const daysInRange: ChartDayData[] = [];
 
-      // Tạo một mảng các ngày trong 7 ngày qua với giá trị ban đầu là 0
       for (let i = 0; i < 7; i++) {
         const currentDate = startDate.add(i, 'day');
         daysInRange.push({
@@ -56,15 +52,14 @@ export default function ReportScreen() {
               const dailyStats = snapshot.val();
               resolve({
                 date: dayData.date,
-                minutes: dailyStats?.minutesWorked || 0, // Lấy minutesWorked, mặc định là 0 nếu không có
+                minutes: dailyStats?.minutesWorked || 0,
               });
-            }, { onlyOnce: true }); // Đọc một lần cho mỗi ngày
+            }, { onlyOnce: true });
           });
         });
 
         const dailyDataArray = await Promise.all(promises);
 
-        // Sắp xếp lại theo đúng thứ tự ngày nếu Promise.all không đảm bảo
         dailyDataArray.sort((a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf());
 
         setChartDataPoints(dailyDataArray);
@@ -120,33 +115,33 @@ export default function ReportScreen() {
     backgroundColor: "#1E1E1E",
     backgroundGradientFrom: "#121212",
     backgroundGradientTo: "#1E1E1E",
-    decimalPlaces: 0, // không có số thập phân cho phút
-    color: (opacity = 1) => `rgba(255, 111, 0, ${opacity})`, // Màu cam
-    labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`, // Màu trắng cho label
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(255, 111, 0, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
     style: {
       borderRadius: 16,
     },
     propsForDots: {
-      r: "5", // Kích thước chấm
+      r: "5",
       strokeWidth: "2",
-      stroke: "#FF6F00", // Màu viền chấm
+      stroke: "#FF6F00",
     },
     propsForBackgroundLines: {
-        strokeDasharray: "", // Nét liền cho đường lưới
-        stroke: "rgba(255, 255, 255, 0.2)", // Màu đường lưới
+        strokeDasharray: "",
+        stroke: "rgba(255, 255, 255, 0.2)",
     }
   };
 
   const lineChartData = {
-    labels: chartDataPoints.map(d => dayjs(d.date).format('DD/MM')), // MM/DD
+    labels: chartDataPoints.map(d => dayjs(d.date).format('DD/MM')),
     datasets: [
       {
         data: chartDataPoints.map(d => d.minutes),
-        color: (opacity = 1) => `rgba(255, 111, 0, ${opacity})`, // Màu đường line
-        strokeWidth: 2, // Độ dày đường line
+        color: (opacity = 1) => `rgba(255, 111, 0, ${opacity})`,
+        strokeWidth: 2,
       },
     ],
-    legend: ["Số phút làm việc"] // Chú thích cho biểu đồ
+    legend: ["Số phút làm việc"]
   };
 
   return (
@@ -156,23 +151,20 @@ export default function ReportScreen() {
         {chartDataPoints.length > 0 ? (
         <LineChart
             data={lineChartData}
-            width={screenWidth - 20} // Điều chỉnh padding
+            width={screenWidth - 20}
             height={250}
             chartConfig={chartConfig}
-            bezier // Làm cho đường cong mượt hơn
+            bezier
             style={{
             marginVertical: 15,
             borderRadius: 16,
             alignSelf: 'center'
             }}
-            yAxisSuffix="p" // Thêm 'p' sau số phút
-            // fromZero // Bắt đầu trục Y từ 0
-            // segments={5} // Số đoạn trên trục Y (tùy chọn)
+            yAxisSuffix="p"
         />
         ) : (
         <Text style={styles.infoText}>Không có dữ liệu để hiển thị biểu đồ.</Text>
         )}
-        {/* Bạn có thể thêm các thống kê khác ở đây */}
     </ScrollView>
   );
 }

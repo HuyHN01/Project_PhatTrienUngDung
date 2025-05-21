@@ -5,7 +5,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#121212', // Giống theme app
+    backgroundColor: '#121212', 
   },
   title: {
     fontSize: 28,
@@ -36,9 +36,9 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   linkText: {
-    color: '#FF6F00', // Hoặc màu bạn muốn
+    color: '#FF6F00', 
     textAlign: 'center',
     fontSize: 16,
-    marginTop: 10, // Thêm khoảng cách nếu cần
+    marginTop: 10, 
   },
 });

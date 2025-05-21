@@ -1,4 +1,3 @@
-// app/settings/index.tsx
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -18,7 +17,6 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 
-// --- KEYS CHO ASYNCSTORAGE ---
 const POMODORO_DURATION_KEY = 'pomodoroDuration';
 const SHORT_BREAK_DURATION_KEY = 'shortBreakDuration';
 const LONG_BREAK_DURATION_KEY = 'longBreakDuration';
@@ -29,42 +27,34 @@ const AUTO_START_BREAK_KEY = 'autoStartBreak';
 const END_SOUND_URI_KEY = 'endSoundUri';
 const BREAK_MUSIC_URI_KEY = 'breakMusicUri';
 
-// Các giá trị mặc định (phút)
 const DEFAULT_POMODORO_DURATION = 25;
 const DEFAULT_SHORT_BREAK_DURATION = 5;
 const DEFAULT_LONG_BREAK_DURATION = 15;
 const DEFAULT_LONG_BREAK_INTERVAL = 4;
 
-
-// --- Định nghĩa kiểu cho cấu hình một setting ---
 type NumberSettingConfig = {
   key: string;
-  type: 'number'; // Thêm 'type' để phân biệt
+  type: 'number'; 
   setter: React.Dispatch<React.SetStateAction<number>>;
   defaultValue: number;
 };
 
 type BooleanSettingConfig = {
   key: string;
-  type: 'boolean'; // Thêm 'type'
+  type: 'boolean'; 
   setter: React.Dispatch<React.SetStateAction<boolean>>;
   defaultValue: boolean;
 };
 
-// Cho URI hoặc tên file âm thanh
-// Setter có thể là setState trực tiếp hoặc một hàm tùy chỉnh
 type StringNullableSettingConfig = {
   key: string;
-  type: 'string_nullable_custom_setter'; // Hoặc 'string_nullable_state_setter'
-  setter: (value: string | null) => void; // Hàm tùy chỉnh
-  // setter: React.Dispatch<React.SetStateAction<string | null>>; // Nếu là setState trực tiếp
+  type: 'string_nullable_custom_setter'; 
+  setter: (value: string | null) => void;
   defaultValue: string | null;
 };
 
 type SettingConfig = NumberSettingConfig | BooleanSettingConfig | StringNullableSettingConfig;
 
-
-// --- Components con ---
 interface SettingValueItemProps {
   label: string;
   value?: string | number;
@@ -100,7 +90,6 @@ const SettingSwitchItem: React.FC<SettingSwitchItemProps> = ({ label, value, onV
   </View>
 );
 
-// --- Component chính ---
 export default function SettingsScreen() {
   const router = useRouter();
 
@@ -145,8 +134,7 @@ export default function SettingsScreen() {
             valueToSet = setting.defaultValue;
           }
 
-          if (valueToSet !== null) { // Chỉ set nếu có giá trị (từ storage hoặc default)
-            // Sử dụng type guard (dựa vào thuộc tính 'type' vừa thêm) để TypeScript hiểu rõ
+          if (valueToSet !== null) { 
             switch (setting.type) {
               case 'number':
                 if (typeof valueToSet === 'number') {
@@ -159,7 +147,6 @@ export default function SettingsScreen() {
                 }
                 break;
               case 'string_nullable_custom_setter':
-                 // Với setter tùy chỉnh, chúng ta đã định nghĩa kiểu của nó
                 (setting.setter as (value: string | null) => void)(valueToSet as string | null);
                 break;
             }
@@ -241,13 +228,10 @@ export default function SettingsScreen() {
     }
   };
 
-  // ... (phần JSX không thay đổi nhiều, giữ nguyên)
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Dự Án - Tạm thời */}
       <SettingItem label="Dự Án" onPress={() => Alert.alert('Thông báo', 'Điều hướng đến Dự Án')} />
 
-      {/* Cài đặt Pomodoro */}
       <Text style={styles.sectionHeader}>POMODORO</Text>
       <SettingItem label="Chuông báo kết thúc Pomodoro" value={endSoundName} onPress={() => pickSound('endSound')} />
       <SettingItem label="Tiếng Động Giúp Tập Trung" value={breakMusicName} onPress={() => pickSound('breakMusic')} />
@@ -273,18 +257,15 @@ export default function SettingsScreen() {
         onValueChange={async (val) => { setAutoStartBreak(val); await saveSetting(AUTO_START_BREAK_KEY, val);}}
       />
 
-      {/* Giao Diện */}
       <Text style={styles.sectionHeader}>GIAO DIỆN</Text>
       <SettingItem label="Giao Diện Pomodoro" onPress={() => router.push('/settings/pomodoro-interface')} />
 
-      {/* Khác - Tạm thời */}
       <Text style={styles.sectionHeader}>KHÁC</Text>
       <SettingSwitchItem label="Trồng cây" value={false} onValueChange={() => {}} />
       <SettingItem label="Xếp Hạng" onPress={() => Alert.alert('Thông báo', 'Điều hướng đến Xếp Hạng')} />
 
       <View style={{ height: 50 }} />
 
-      {/* Modal chỉnh sửa thời gian */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -314,7 +295,6 @@ export default function SettingsScreen() {
   );
 }
 
-// Component SettingItem cơ bản để tái sử dụng
 const SettingItem: React.FC<{ label: string; value?: string; onPress?: () => void }> = ({ label, value, onPress }) => (
   <TouchableOpacity style={styles.settingItem} onPress={onPress} disabled={!onPress}>
     <Text style={styles.settingLabel}>{label}</Text>
@@ -324,7 +304,6 @@ const SettingItem: React.FC<{ label: string; value?: string; onPress?: () => voi
     </View>
   </TouchableOpacity>
 );
-
 
 const styles = StyleSheet.create({
   container: {

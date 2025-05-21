@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router'; // <- thêm router
+import { useRouter } from 'expo-router'; 
 
 const TOTAL_HOLES = 9;
-const GAME_DURATION = 30; // giây
-const MOLE_APPEAR_INTERVAL = 800; // ms
+const GAME_DURATION = 30; 
+const MOLE_APPEAR_INTERVAL = 800; 
 
 export default function WhackMoleGame() {
   const [moleIndex, setMoleIndex] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [isRunning, setIsRunning] = useState(false);
-  const router = useRouter(); // <- thêm router
+  const router = useRouter(); 
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval>;
@@ -39,7 +39,7 @@ export default function WhackMoleGame() {
   const handleHit = (index: number) => {
     if (index === moleIndex) {
       setScore(score + 1);
-      setMoleIndex(null); // chuột biến mất
+      setMoleIndex(null); 
     }
   };
 
