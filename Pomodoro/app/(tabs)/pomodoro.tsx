@@ -119,26 +119,46 @@ export default function PomodoroScreen() {
     }
   }, [pomodoroDurationSetting, params.taskPomodoroDuration, mode, isActive]);
 
-  const loadAndPlaySound = useCallback(async (soundObjectRef: React.MutableRefObject<Audio.Sound | null>, uri: string | null, options: Record<string, any> = {}) => {
-    if (!uri) {
-      console.log("Không có URI âm thanh để phát.");
-      return;
+  const loadAndPlaySound = useCallback(async (soundObjectRef: React.MutableRefObject<Audio.Sound | null>, sourceInput: string | number | null, options: Record<string, any> = {}) => {
+  if (!sourceInput && sourceInput !== 0) { 
+    console.log("Không có URI hoặc resource ID âm thanh để phát.");
+    return;
+  }
+  try {
+    if (soundObjectRef.current) {
+      await soundObjectRef.current.unloadAsync();
+      soundObjectRef.current = null; 
     }
-    try {
-      if (soundObjectRef.current) {
-        await soundObjectRef.current.unloadAsync();
-      }
-      console.log(`Đang tải âm thanh từ URI: ${uri}`);
-      const { sound } = await Audio.Sound.createAsync({ uri }, options);
-      soundObjectRef.current = sound;
-      await soundObjectRef.current.playAsync();
-      return sound;
-    } catch (error) {
-      console.error(`Lỗi tải hoặc phát âm thanh từ URI ${uri}:`, error);
-      Alert.alert("Lỗi Âm thanh", `Không thể phát âm thanh: ${uri.split('/').pop()}`);
+    console.log(`Đang tải âm thanh từ: ${sourceInput}`);
+
+    let soundSource: number | { uri: string } | undefined;
+    if (typeof sourceInput === 'number') {
+      soundSource = sourceInput;
+    } else if (typeof sourceInput === 'string') {
+      soundSource = { uri: sourceInput };
+    } else {
+      console.error("Loại nguồn âm thanh không hợp lệ:", sourceInput);
+      Alert.alert("Lỗi Âm thanh", "Loại nguồn âm thanh không hợp lệ.");
       return null;
     }
-  }, []);
+
+    if (soundSource === undefined) {
+        console.error("soundSource là undefined. Điều này không nên xảy ra nếu sourceInput hợp lệ.");
+        Alert.alert("Lỗi Âm thanh", "Không thể xác định nguồn âm thanh.");
+        return null;
+    }
+
+    const { sound } = await Audio.Sound.createAsync(soundSource, options);
+    soundObjectRef.current = sound;
+    await soundObjectRef.current.playAsync();
+    return sound;
+  } catch (error) {
+    console.error(`Lỗi tải hoặc phát âm thanh từ ${sourceInput}:`, error);
+    const sourceName = typeof sourceInput === 'string' ? sourceInput.split('/').pop() : `Resource ID ${sourceInput}`;
+    Alert.alert("Lỗi Âm thanh", `Không thể phát âm thanh: ${sourceName}.\nKiểm tra lại tệp âm thanh hoặc đường dẫn.`);
+    return null;
+  }
+}, []);
 
   const playEndSound = useCallback(async () => {
     await loadAndPlaySound(endSoundRef, endSoundUri, { shouldPlay: true });
